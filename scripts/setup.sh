@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# LAN-Party-Leaderboard - ein Skript fuer alles.
+# party-pi - ein Skript fuer alles.
 #
-#   sudo ./LAN-Party-Leaderboard/scripts/setup.sh              installieren
-#   sudo ./LAN-Party-Leaderboard/scripts/setup.sh --status     nachsehen, was laeuft
-#   sudo ./LAN-Party-Leaderboard/scripts/setup.sh --uninstall  wieder entfernen
-#        ./LAN-Party-Leaderboard/scripts/setup.sh --no-services   nur vorbereiten
+#   sudo ./scripts/setup.sh              installieren bzw. aktualisieren
+#   sudo ./scripts/setup.sh --status     nachsehen, was laeuft
+#   sudo ./scripts/setup.sh --uninstall  wieder entfernen
+#        ./scripts/setup.sh --no-services   nur vorbereiten (z.B. auf dem Laptop)
 #
 # Richtet ein:
 #   - Kopie des Projekts nach /opt/lanparty
@@ -139,7 +139,7 @@ fi
 # 1. Vorbedingungen
 # ---------------------------------------------------------------------------
 log "Pruefe die Voraussetzungen..."
-[ -f "$SOURCE_DIR/leaderboard.py" ] || die "leaderboard.py nicht gefunden - liegt das Skript unter LAN-Party-Leaderboard/scripts/?"
+[ -f "$SOURCE_DIR/leaderboard.py" ] || die "leaderboard.py nicht gefunden - liegt das Skript im Ordner scripts/ des Projekts?"
 
 command -v python3 >/dev/null 2>&1 || die "python3 wird benoetigt (auf Raspberry Pi OS vorinstalliert)."
 PY_OK="$(python3 -c 'import sys; print(1 if sys.version_info >= (3, 9) else 0)')"

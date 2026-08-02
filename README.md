@@ -1,4 +1,4 @@
-# LAN-Party-Leaderboard
+# party-pi
 
 Live-Leaderboard und kleine Party-Infrastruktur für einen LAN-Abend, gedacht für einen
 Raspberry Pi am Fernseher oder Beamer — im orangen Cyberpunk-Look.
@@ -23,10 +23,19 @@ Auch der QR-Code wird selbst erzeugt.
 Ein Skript macht alles:
 
 ```bash
-git clone <dieses-Repo>
-cd claude_code
-sudo ./LAN-Party-Leaderboard/scripts/setup.sh
+git clone https://github.com/HeppixMe/party-pi.git
+cd party-pi
+sudo ./scripts/setup.sh
 ```
+
+Später auf den neuesten Stand bringen:
+
+```bash
+cd party-pi && git pull && sudo ./scripts/setup.sh
+```
+
+Ein erneuter Durchlauf lässt Spielstand, Passwort und Lüfterkonfiguration unangetastet —
+er tauscht nur das Programm aus und startet die Dienste neu.
 
 Es prüft die Voraussetzungen, läuft einmal durch die Tests, legt Benutzer, Dienste und
 Passwort an — und zeigt am Ende alle Adressen samt QR-Code direkt im Terminal, sodass du
@@ -56,13 +65,12 @@ Beispiel — Port 8080, Lüfter an GPIO 14, Kiosk auf dem Leaderboard:
 ```bash
 sudo LAN_HTTP_PORT=8080 LAN_FAN_BACKEND=gpio LAN_FAN_GPIO_PIN=14 \
      LAN_SETUP_KIOSK=1 LAN_KIOSK_PAGE=/ \
-     ./LAN-Party-Leaderboard/scripts/setup.sh
+     ./scripts/setup.sh
 ```
 
 ### Vorher auf dem Laptop ausprobieren
 
 ```bash
-cd LAN-Party-Leaderboard
 python3 leaderboard.py --port 8000 --data ./data
 ```
 
@@ -216,7 +224,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-cd LAN-Party-Leaderboard && python3 -m unittest discover -s tests   # 178 Tests, ~7 s
+python3 -m unittest discover -s tests      # 178 Tests, ~7 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```
