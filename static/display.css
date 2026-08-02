@@ -36,7 +36,8 @@ body {
   gap: clamp(0.6rem, 1.4vw, 1.6rem);
 }
 
-@media (max-aspect-ratio: 1/1) {
+/* 4:3 Bildschirme und enger (auch quadratisch) */
+@media (max-aspect-ratio: 1.45/1) {
   .board { grid-template-columns: 1fr; grid-template-rows: 1.3fr 1fr; }
 }
 
@@ -115,6 +116,10 @@ body {
 .grid thead th#head-b { color: var(--team-b); text-shadow: var(--glow-b); }
 
 .col-level { width: 34%; }
+
+@media (max-aspect-ratio: 1.45/1) {
+  .col-level { width: 30%; }
+}
 
 .grid tbody td, .grid tbody th {
   font-size: clamp(1rem, 3.4vh, 3rem);
