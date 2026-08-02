@@ -1,0 +1,277 @@
+/*
+ * Layout der kleinen Seiten: QR, Kader, Systemstatus, Info-Tafel,
+ * Seitenuebersicht und die Spieler-Anmeldung.
+ *
+ * Zwei Betriebsarten in einem Stylesheet:
+ *   - auf dem Fernseher (Vollbild, gross, kein Scrollen)
+ *   - auf dem Handy (Anmeldung, bequem tippbar)
+ */
+
+body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(0.8rem, 2vh, 1.6rem) clamp(0.8rem, 2vw, 2rem);
+  gap: clamp(0.6rem, 1.6vh, 1.2rem);
+}
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+.page-head h1 { font-size: clamp(1.2rem, 3vh, 2.6rem); }
+.page-head .badge { font-size: clamp(0.7rem, 1.5vh, 1rem); }
+
+.page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.6rem, 1.6vh, 1.2rem);
+}
+
+.panel { padding: clamp(0.8rem, 2vh, 1.5rem); }
+
+.subtle {
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: clamp(0.7rem, 1.5vh, 1rem);
+  margin: 0;
+}
+
+/* --- Mitmach-Seite mit QR-Code (fuer den Fernseher) --------------------- */
+.qr-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: clamp(1rem, 3vw, 3rem);
+  align-items: center;
+}
+
+@media (max-aspect-ratio: 4/5) {
+  .qr-layout { grid-template-columns: 1fr; align-content: center; }
+}
+
+.qr-frame {
+  /* Ueber die Scanlines heben: ein von Streifen ueberzogener Code laesst sich
+     mit der Handykamera deutlich schlechter einlesen. */
+  position: relative;
+  z-index: 95;
+  background: #ffffff;
+  padding: clamp(0.5rem, 1.5vh, 1.2rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-frame img {
+  display: block;
+  width: min(46vw, 62vh);
+  height: auto;
+  image-rendering: pixelated;   /* harte Modulkanten, gut fuer Scanner */
+}
+
+.qr-steps { display: flex; flex-direction: column; gap: clamp(0.8rem, 3vh, 2rem); }
+
+.qr-steps ol {
+  margin: 0;
+  padding-left: 1.6em;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.5rem, 1.8vh, 1.2rem);
+}
+
+.qr-steps li {
+  font-size: clamp(1rem, 3vh, 2.2rem);
+  line-height: 1.35;
+}
+
+.qr-manual { border-top: 1px solid var(--line); padding-top: clamp(0.6rem, 2vh, 1.2rem); }
+.qr-manual p { margin: 0 0 0.3em; }
+
+.qr-url {
+  font-size: clamp(1.1rem, 3.6vh, 2.8rem);
+  font-weight: 700;
+  color: var(--accent);
+  text-shadow: var(--glow);
+  word-break: break-all;
+}
+
+/* --- Kader -------------------------------------------------------------- */
+.roster {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(0.6rem, 1.6vw, 1.4rem);
+}
+
+.roster .panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+.roster h2 { font-size: clamp(1rem, 2.8vh, 2.1rem); }
+.roster .panel.a h2 { color: var(--team-a); }
+.roster .panel.b h2 { color: var(--team-b); text-shadow: var(--glow-b); }
+
+.roster .count {
+  color: var(--muted);
+  font-size: clamp(0.7rem, 1.6vh, 1.1rem);
+  margin: 0.2rem 0 0.8rem;
+}
+
+.roster ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.15rem, 0.6vh, 0.5rem);
+  overflow: hidden;
+}
+
+.roster li {
+  font-size: clamp(0.95rem, 2.6vh, 2rem);
+  font-weight: 700;
+  padding: clamp(0.15rem, 0.6vh, 0.5rem) clamp(0.3rem, 0.8vw, 0.8rem);
+  background: var(--bg-row);
+  border-left: 3px solid transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster .panel.a li { border-left-color: var(--team-a); }
+.roster .panel.b li { border-left-color: var(--team-b); }
+
+.roster li .record {
+  float: right;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: clamp(0.65rem, 1.5vh, 1rem);
+}
+
+/* --- Systemstatus als Terminal ------------------------------------------ */
+.terminal {
+  flex: 1 1 auto;
+  min-height: 0;
+  font-size: clamp(0.85rem, 2.2vh, 1.6rem);
+  line-height: 1.7;
+  overflow: hidden;
+}
+
+.terminal dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) 1fr;
+  gap: 0.2rem 1.5rem;
+}
+
+.terminal dt { color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+.terminal dd { margin: 0; color: var(--text); font-weight: 700; }
+.terminal dd.warn { color: var(--bad); }
+.terminal dd.good { color: var(--ok); }
+
+.terminal .prompt::before {
+  content: "> ";
+  color: var(--accent);
+}
+
+/* --- Info-Tafel --------------------------------------------------------- */
+.board-text {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow: hidden;
+  font-size: clamp(0.95rem, 3vh, 2.2rem);
+  line-height: 1.6;
+}
+
+/* --- Seitenuebersicht --------------------------------------------------- */
+.page-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: clamp(0.6rem, 1.5vw, 1.2rem);
+}
+
+.page-list a {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: clamp(0.7rem, 2vh, 1.2rem);
+  height: 100%;
+}
+
+.page-list .name {
+  display: block;
+  font-size: clamp(1rem, 2.4vh, 1.6rem);
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-list .path { display: block; color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0 0.5rem; }
+.page-list .what { display: block; font-size: 0.9rem; line-height: 1.45; }
+
+/* --- Spieler-Anmeldung (Handy) ------------------------------------------ */
+.join {
+  max-width: 30rem;
+  width: 100%;
+  margin: 0 auto;
+  padding: 1.2rem;
+}
+
+.join h1 { font-size: 1.4rem; margin-bottom: 0.3rem; }
+.join > .subtle { margin-bottom: 1.4rem; }
+.join .field label { display: block; font-size: 0.75rem; color: var(--muted);
+                     text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.3rem; }
+.join .field { margin-bottom: 1rem; }
+
+.team-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+
+.team-choice button {
+  min-height: 76px;
+  font-size: 1rem;
+  font-weight: 700;
+  white-space: normal;
+  /* Farbstreifen, damit schon vor dem Antippen klar ist, welcher Knopf zu
+     welchem Team gehoert - dieselbe Zuordnung wie auf dem Leaderboard. */
+  border-left-width: 4px;
+}
+
+.team-choice button[data-team="a"] { border-left-color: var(--team-a); }
+.team-choice button[data-team="b"] { border-left-color: var(--team-b); }
+
+.team-choice button[data-team="a"].chosen {
+  background: var(--team-a); border-color: var(--team-a); color: #180a00;
+}
+.team-choice button[data-team="b"].chosen {
+  background: var(--team-b); border-color: var(--team-b); color: #001318;
+}
+
+.join-state {
+  margin: 0 0 1rem;
+  padding: 0.7rem;
+  border: 1px solid var(--ok);
+  color: var(--ok);
+  font-size: 0.9rem;
+}
+
+.join-error {
+  margin: 0.8rem 0 0;
+  color: var(--bad);
+  font-size: 0.9rem;
+}
+
+.join .links { margin-top: 1.2rem; font-size: 0.8rem; }
+.join .links a { color: var(--muted); }

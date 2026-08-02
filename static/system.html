@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>System – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>System</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <section class="panel page-body">
+    <p class="subtle prompt">pi status --live</p>
+    <div class="terminal">
+      <dl>
+        <dt>Temperatur</dt><dd id="temp">–</dd>
+        <dt>Lüfter</dt><dd id="fan">–</dd>
+        <dt>Regelung</dt><dd id="backend">–</dd>
+        <dt>Laufzeit</dt><dd id="uptime">–</dd>
+        <dt>Auslastung</dt><dd id="load">–</dd>
+        <dt>Adresse</dt><dd id="address">–</dd>
+        <dt>Offene Seiten</dt><dd id="connections">–</dd>
+        <dt>Spieler</dt><dd id="players">–</dd>
+        <dt>Bildschirme</dt><dd id="screens">–</dd>
+      </dl>
+    </div>
+  </section>
+
+  <script type="module" src="/static/system.js"></script>
+</body>
+</html>

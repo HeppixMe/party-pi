@@ -2,14 +2,30 @@
 """
 LAN-Party-Leaderboard - Anzeige- und Steuerserver.
 
-Ein einziger Prozess, ausschliesslich Python-Standardbibliothek:
+Ein einziger Prozess, ausschliesslich Python-Standardbibliothek.
 
-  GET  /            Anzeige-Seite fuer den Beamer/Fernseher (ohne Passwort)
-  GET  /admin       Steuerseite (Passwort noetig)
-  GET  /api/state   aktueller Zustand als JSON
-  GET  /api/events  Server-Sent-Events: schiebt jede Aenderung sofort an alle Seiten
-  GET  /api/fan     Temperatur/Luefterstufe (aus data/fan-status.json, siehe fan/fan_control.py)
-  POST /api/...     Aenderungen (nur mit gueltiger Anmeldung)
+Seiten (alle ohne Passwort ausser /admin):
+
+  /                Leaderboard fuer den Fernseher
+  /seiten          Uebersicht aller Seiten
+  /qr              grosser QR-Code zum Mitmachen
+  /mitmachen       Spieler-Anmeldung (Name + Team), fuers Handy
+  /teams           Kader: wer ist in welchem Team
+  /system          Systemstatus des Pi
+  /info            Info-Tafel (Text im Admin bearbeitbar)
+  /screen/<name>   gesteuerter Bildschirm - zeigt, was der Admin zuweist
+  /admin           Steuerung (Passwort)
+
+Schnittstelle:
+
+  GET  /api/state    aktueller Zustand als JSON
+  GET  /api/events   Server-Sent-Events: jede Aenderung sofort an alle Seiten
+  GET  /api/fan      Temperatur und Luefterstufe
+  GET  /api/system   Laufzeit, Last, Adresse, verbundene Seiten
+  GET  /api/qr.svg   QR-Code der Beitritts-Adresse
+  POST /api/join     Spieler-Anmeldung (ohne Passwort)
+  POST /api/screens/hello  Bildschirm meldet sich (ohne Passwort)
+  POST /api/...      alles Weitere nur mit Admin-Anmeldung
 
 Zustand liegt in <data>/state.json, Konfiguration (Passwort-Hash, Cookie-Secret)
 in <data>/config.json.
@@ -38,6 +54,7 @@ import mimetypes
 import os
 import queue
 import secrets
+import socket
 import sys
 import tempfile
 import threading
@@ -47,12 +64,39 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+import qr
+
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 
-STATE_VERSION = 1
+STATE_VERSION = 2
 SESSION_TTL = 12 * 3600  # Ein Party-Abend ist damit sicher abgedeckt.
 COOKIE_NAME = "lanparty_session"
+PLAYER_COOKIE = "lanparty_player"
+PLAYER_TTL = 48 * 3600
+
+MAX_PLAYERS = 100
+MAX_SCREENS = 20
+SCREEN_OFFLINE_AFTER = 120_000  # ms ohne Lebenszeichen -> als offline anzeigen
+
+DEFAULT_INFO_TEXT = (
+    "WLAN: <Netzname>\n"
+    "Passwort: <Passwort>\n"
+    "\n"
+    "Ablauf:\n"
+    "  20:00  SOS, Team gegen Team\n"
+    "  22:00  Smash-Turnier\n"
+)
+
+# Ansichten, die der Admin einem Bildschirm zuweisen kann.
+VIEWS = (
+    ("/", "Leaderboard"),
+    ("/qr", "Mitmachen (QR)"),
+    ("/teams", "Kader"),
+    ("/system", "Systemstatus"),
+    ("/info", "Info-Tafel"),
+)
+VIEW_PATHS = {path for path, _label in VIEWS}
 SSE_HEARTBEAT = 15.0
 PBKDF2_ITERATIONS = 200_000
 
@@ -98,6 +142,35 @@ def clamp_name(value, fallback: str = "", limit: int = 60) -> str:
     return cleaned[:limit] if cleaned else fallback
 
 
+def local_ip_address() -> str:
+    """
+    Die LAN-Adresse dieses Rechners. Der Trick mit dem UDP-Socket verschickt
+    nichts - er laesst nur das Betriebssystem die passende Netzwerkkarte
+    auswaehlen und fragt danach deren Adresse ab.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.settimeout(0.2)
+            probe.connect(("192.0.2.1", 9))  # Adresse aus dem Testbereich, kein Verkehr
+            return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def clamp_screen_id(value) -> str:
+    """
+    Bildschirm-Name aus der URL saeubern: nur Kleinbuchstaben, Ziffern und
+    Bindestrich. Der Name landet in Pfaden und Dateien - alles andere waere
+    eine Einladung fuer Ueberraschungen.
+    """
+    if not isinstance(value, str):
+        return ""
+    cleaned = "".join(
+        char for char in value.strip().lower() if char.isalnum() or char in "-_"
+    )
+    return cleaned[:24]
+
+
 def as_int(value, fallback: int = 0) -> int:
     try:
         return int(value)
@@ -118,7 +191,12 @@ def default_state() -> dict:
             ],
             "levels": [],
         },
-        "smash": {"players": []},
+        # Eine Personenliste fuer beides: Kader-Zugehoerigkeit und Smash-Wertung.
+        "players": [],
+        "info": {"text": DEFAULT_INFO_TEXT},
+        "display": {"fx": "full"},
+        "screens": [],
+        "fan": {"force": False},
     }
 
 
@@ -258,8 +336,13 @@ def migrate_state(raw) -> dict:
                 }
             state["sos"]["levels"].append(level)
 
+    # Spieler lagen frueher unter smash.players; seit Version 2 stehen sie
+    # oben, weil sie auch die Kader-Zugehoerigkeit tragen. Beide Orte lesen,
+    # damit ein Spielstand von vorher nichts verliert.
     smash = raw.get("smash") if isinstance(raw.get("smash"), dict) else {}
-    players = smash.get("players")
+    players = raw.get("players")
+    if not isinstance(players, list):
+        players = smash.get("players")
     if isinstance(players, list):
         for stored in players:
             if not isinstance(stored, dict):
@@ -267,12 +350,44 @@ def migrate_state(raw) -> dict:
             name = clamp_name(stored.get("name"))
             if not name:
                 continue
-            state["smash"]["players"].append(
+            team_id = stored.get("teamId")
+            state["players"].append(
                 {
                     "id": stored.get("id") or new_id(),
                     "name": name,
+                    "teamId": team_id if team_id in TEAM_IDS else None,
                     "wins": max(0, as_int(stored.get("wins"), 0)),
                     "losses": max(0, as_int(stored.get("losses"), 0)),
+                }
+            )
+
+    info = raw.get("info")
+    if isinstance(info, dict) and isinstance(info.get("text"), str):
+        state["info"]["text"] = info["text"][:4000]
+
+    display = raw.get("display")
+    if isinstance(display, dict) and display.get("fx") in ("full", "plain"):
+        state["display"]["fx"] = display["fx"]
+
+    fan = raw.get("fan")
+    if isinstance(fan, dict):
+        state["fan"]["force"] = bool(fan.get("force"))
+
+    screens = raw.get("screens")
+    if isinstance(screens, list):
+        for stored in screens:
+            if not isinstance(stored, dict):
+                continue
+            screen_id = clamp_screen_id(stored.get("id"))
+            if not screen_id:
+                continue
+            view = stored.get("view")
+            state["screens"].append(
+                {
+                    "id": screen_id,
+                    "name": clamp_name(stored.get("name"), screen_id, limit=40),
+                    "view": view if view in VIEW_PATHS else "/",
+                    "seenAt": as_int(stored.get("seenAt"), 0),
                 }
             )
 
@@ -326,6 +441,9 @@ class Store:
         body = {
             "state": self.state,
             "standings": compute_standings(self.state, now),
+            # Die Ansichtsliste ist fest verdrahtet und winzig - sie gehoert in
+            # jede Nachricht, damit keine Seite raten muss, woher sie kommt.
+            "views": [{"path": path, "label": label} for path, label in VIEWS],
             "serverNow": now,
         }
         return json.dumps(body, ensure_ascii=False)
@@ -344,6 +462,10 @@ class Store:
     def unsubscribe(self, client) -> None:
         with self._lock:
             self._subscribers.discard(client)
+
+    def subscriber_count(self) -> int:
+        with self._lock:
+            return len(self._subscribers)
 
     def _broadcast(self, payload: str) -> None:
         with self._lock:
@@ -455,20 +577,60 @@ def op_delete_level(state: dict, level_id) -> None:
         remaining[-1]["active"] = True
 
 
-def op_add_player(state: dict, name) -> dict:
-    label = clamp_name(name)
+def op_add_player(state: dict, name, team_id=None) -> dict:
+    label = clamp_name(name, limit=40)
     if not label:
         raise ValueError("Name fehlt")
-    player = {"id": new_id(), "name": label, "wins": 0, "losses": 0}
-    state["smash"]["players"].append(player)
+    if len(state["players"]) >= MAX_PLAYERS:
+        raise ValueError(f"Es sind schon {MAX_PLAYERS} Spieler eingetragen")
+    player = {
+        "id": new_id(),
+        "name": label,
+        "teamId": team_id if team_id in TEAM_IDS else None,
+        "wins": 0,
+        "losses": 0,
+    }
+    state["players"].append(player)
     return player
 
 
 def find_player(state: dict, player_id) -> dict | None:
-    for player in state["smash"]["players"]:
+    for player in state["players"]:
         if player["id"] == player_id:
             return player
     return None
+
+
+def op_join(state: dict, player_id, name, team_id) -> dict:
+    """
+    Anmeldung eines Gastes ueber den QR-Code.
+
+    Bringt er das Cookie einer frueheren Anmeldung mit, wird sein Eintrag
+    geaendert statt ein zweiter angelegt - sonst haette jeder, der die Seite
+    zweimal oeffnet, einen Doppelgaenger im Kader.
+    """
+    label = clamp_name(name, limit=40)
+    if not label:
+        raise ValueError("Bitte einen Namen eingeben")
+    if team_id not in TEAM_IDS:
+        raise ValueError("Bitte ein Team waehlen")
+
+    player = find_player(state, player_id) if player_id else None
+    if player is None:
+        return op_add_player(state, label, team_id)
+
+    player["name"] = label
+    player["teamId"] = team_id
+    return player
+
+
+def op_set_player_team(state: dict, player_id, team_id) -> None:
+    player = find_player(state, player_id)
+    if player is None:
+        raise KeyError("Spieler unbekannt")
+    if team_id is not None and team_id not in TEAM_IDS:
+        raise ValueError("Unbekanntes Team")
+    player["teamId"] = team_id
 
 
 def op_player_score(state: dict, player_id, field: str, delta: int) -> None:
@@ -492,13 +654,85 @@ def op_match(state: dict, winner_id, loser_id) -> None:
 
 
 def op_reset(state: dict, scope: str) -> None:
+    """
+    Zuruecksetzen. 'smash' loescht nur die Siege, nicht die Spieler - die
+    Personenliste ist auch der Kader und soll nicht mit der Wertung
+    verschwinden. Bildschirme, Info-Text und Schalter bleiben immer stehen.
+    """
     if scope in ("all", "sos"):
         state["sos"]["levels"] = []
     if scope in ("all", "smash"):
-        state["smash"]["players"] = []
+        for player in state["players"]:
+            player["wins"] = 0
+            player["losses"] = 0
+    if scope in ("all", "players"):
+        state["players"] = []
     if scope == "all":
-        fresh = default_state()
-        state["sos"]["teams"] = fresh["sos"]["teams"]
+        state["sos"]["teams"] = default_state()["sos"]["teams"]
+
+
+def op_set_info(state: dict, text) -> None:
+    state["info"]["text"] = (text if isinstance(text, str) else "")[:4000]
+
+
+def op_set_fx(state: dict, fx) -> None:
+    if fx not in ("full", "plain"):
+        raise ValueError("fx muss 'full' oder 'plain' sein")
+    state["display"]["fx"] = fx
+
+
+def op_set_fan_force(state: dict, force) -> bool:
+    state["fan"]["force"] = bool(force)
+    return state["fan"]["force"]
+
+
+# -- Bildschirme -------------------------------------------------------------
+def find_screen(state: dict, screen_id) -> dict | None:
+    for screen in state["screens"]:
+        if screen["id"] == screen_id:
+            return screen
+    return None
+
+
+def op_touch_screen(state: dict, screen_id: str, now: int) -> dict:
+    """
+    Ein Bildschirm meldet sich. Neue melden sich damit selbst an, bekannte
+    halten nur ihren Zeitstempel frisch - daran haengt die Offline-Anzeige.
+    """
+    screen = find_screen(state, screen_id)
+    if screen is None:
+        if len(state["screens"]) >= MAX_SCREENS:
+            raise ValueError(f"Es sind schon {MAX_SCREENS} Bildschirme angemeldet")
+        screen = {"id": screen_id, "name": screen_id, "view": "/", "seenAt": now}
+        state["screens"].append(screen)
+    else:
+        screen["seenAt"] = now
+    return screen
+
+
+def op_assign_screen(state: dict, screen_id, view) -> dict:
+    screen = find_screen(state, screen_id)
+    if screen is None:
+        raise KeyError("Bildschirm unbekannt")
+    if view not in VIEW_PATHS:
+        raise ValueError("Unbekannte Ansicht")
+    screen["view"] = view
+    return screen
+
+
+def op_rename_screen(state: dict, screen_id, name) -> None:
+    screen = find_screen(state, screen_id)
+    if screen is None:
+        raise KeyError("Bildschirm unbekannt")
+    screen["name"] = clamp_name(name, screen["id"], limit=40)
+
+
+def op_delete_screen(state: dict, screen_id) -> None:
+    screens = state["screens"]
+    remaining = [s for s in screens if s["id"] != screen_id]
+    if len(remaining) == len(screens):
+        raise KeyError("Bildschirm unbekannt")
+    state["screens"] = remaining
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +813,25 @@ class Auth:
         signature = hmac.new(self._secret_bytes(), payload.encode(), hashlib.sha256).hexdigest()
         return f"{payload}.{signature}"
 
+    def make_value_token(self, value: str, ttl: int) -> str:
+        """Signiertes Cookie, das einen Wert traegt - fuer die Spieler-Kennung."""
+        expires = int(time.time()) + ttl
+        payload = f"{expires}:{value}"
+        signature = hmac.new(self._secret_bytes(), payload.encode(), hashlib.sha256).hexdigest()
+        return f"{payload}:{signature}"
+
+    def check_value_token(self, token):
+        """Gibt den Wert zurueck, wenn Signatur und Frist stimmen, sonst None."""
+        if not token or token.count(":") != 2:
+            return None
+        expires, value, signature = token.split(":")
+        expected = hmac.new(
+            self._secret_bytes(), f"{expires}:{value}".encode(), hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return None
+        return value if as_int(expires, 0) > time.time() else None
+
     def check_token(self, token) -> bool:
         if not token or token.count(".") != 2:
             return False
@@ -629,6 +882,7 @@ class Handler(BaseHTTPRequestHandler):
     store: Store
     auth: Auth
     data_dir: str
+    public_url: str = ""
 
     def log_message(self, fmt, *args):
         # Ruhigeres Log: der Live-Stream und die Temperaturabfrage der Anzeige
@@ -723,30 +977,111 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
-    def do_GET(self):
-        path = urlparse(self.path).path
+    # Oeffentliche Seiten: Pfad -> Datei in static/
+    PAGES = {
+        "/": "display.html",
+        "/seiten": "seiten.html",
+        "/qr": "qr.html",
+        "/mitmachen": "join.html",
+        "/teams": "teams.html",
+        "/system": "system.html",
+        "/info": "info.html",
+    }
 
-        if path == "/":
-            return self._static("display.html")
-        if path in ("/admin", "/admin/"):
+    def do_GET(self):
+        path = urlparse(self.path).path.rstrip("/") or "/"
+
+        if path in self.PAGES:
+            return self._static(self.PAGES[path])
+        if path == "/admin":
             if not self._is_authed():
                 # 401 mit der Anmeldeseite als Inhalt: der Browser zeigt sie an,
                 # Skripte sehen trotzdem einen sauberen Fehlercode.
                 return self._static("login.html", status=HTTPStatus.UNAUTHORIZED)
             return self._static("admin.html")
+        if path.startswith("/screen/"):
+            # Der Name steckt im Pfad; die Seite meldet sich selbst per API an.
+            return self._static("screen.html") if clamp_screen_id(path[len("/screen/"):]) \
+                else self._error(HTTPStatus.NOT_FOUND, "Ungueltiger Bildschirmname")
+
         if path == "/api/state":
             payload = json.loads(self.store.payload())
             payload["authed"] = self._is_authed()
             payload["passwordSet"] = self.auth.has_password
+            payload["me"] = self._current_player()
+            payload["joinUrl"] = self._join_url()
             return self._json(payload)
         if path == "/api/fan":
             return self._json(self._fan_status())
+        if path == "/api/system":
+            return self._json(self._system_status())
+        if path == "/api/qr.svg":
+            body = qr.svg(self._join_url()).encode("utf-8")
+            return self._send(HTTPStatus.OK, body, "image/svg+xml; charset=utf-8")
         if path == "/api/events":
             return self._events()
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
 
         self._error(HTTPStatus.NOT_FOUND, "Unbekannter Pfad")
+
+    # -- Adresse, die im QR-Code landet -------------------------------------
+    def _join_url(self) -> str:
+        """
+        Die Adresse, unter der Gaeste die Anmeldeseite erreichen.
+
+        Reihenfolge: fest eingestellt -> der Host, ueber den diese Anfrage kam
+        -> die LAN-Adresse des Pi. Der Umweg ueber den Host ist wichtig, weil
+        der Kiosk-Browser auf dem Pi selbst ueber localhost kommt - dieser
+        Adresse kann ein Handy nicht folgen.
+        """
+        if self.public_url:
+            return self.public_url.rstrip("/") + "/mitmachen"
+        host = (self.headers.get("Host") or "").strip()
+        hostname = host.split(":")[0]
+        if host and hostname not in ("localhost", "127.0.0.1", "::1", ""):
+            return f"http://{host}/mitmachen"
+        port = self.server.server_address[1]
+        suffix = "" if port == 80 else f":{port}"
+        return f"http://{local_ip_address()}{suffix}/mitmachen"
+
+    def _current_player(self) -> dict | None:
+        """Der Spieler, dessen Cookie diese Anfrage mitbringt (falls vorhanden)."""
+        player_id = self._player_id()
+        if not player_id:
+            return None
+        state = self.store.snapshot()
+        return find_player(state, player_id)
+
+    def _player_id(self):
+        header = self.headers.get("Cookie")
+        if not header:
+            return None
+        try:
+            morsel = SimpleCookie(header).get(PLAYER_COOKIE)
+        except Exception:
+            return None
+        if not morsel:
+            return None
+        return self.auth.check_value_token(morsel.value)
+
+    def _system_status(self) -> dict:
+        """Werte fuer die Systemseite - alles direkt aus /proc und /sys."""
+        status = {"fan": self._fan_status()}
+        try:
+            with open("/proc/uptime", "r", encoding="utf-8") as fh:
+                status["uptimeSeconds"] = int(float(fh.read().split()[0]))
+        except (OSError, ValueError, IndexError):
+            status["uptimeSeconds"] = None
+        try:
+            with open("/proc/loadavg", "r", encoding="utf-8") as fh:
+                status["load"] = [float(value) for value in fh.read().split()[:3]]
+        except (OSError, ValueError):
+            status["load"] = None
+        status["address"] = local_ip_address()
+        status["connections"] = self.store.subscriber_count()
+        status["serverNow"] = now_ms()
+        return status
 
     def _fan_status(self) -> dict:
         """Status des Luefter-Dienstes; faellt auf direktes Auslesen der CPU-Temperatur zurueck."""
@@ -811,6 +1146,13 @@ class Handler(BaseHTTPRequestHandler):
                     "Set-Cookie": f"{COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
                 },
             )
+        # Ohne Passwort erreichbar - das ist der Sinn des QR-Codes. Beide
+        # Endpunkte koennen ausschliesslich den eigenen Eintrag bzw. den
+        # Zeitstempel eines Bildschirms setzen, sonst nichts.
+        if path == "/api/join":
+            return self._join(body)
+        if path == "/api/screens/hello":
+            return self._screen_hello(body)
 
         if not self._require_auth():
             return
@@ -872,27 +1214,66 @@ class Handler(BaseHTTPRequestHandler):
             "/api/reset": lambda body, now: store.mutate(
                 lambda s: op_reset(s, body.get("scope", "all"))
             ),
+            # -- Bildschirme, Anzeige, Luefter, Info-Tafel ------------------
+            "/api/screens/assign": lambda body, now: {
+                "screen": store.mutate(
+                    lambda s: op_assign_screen(s, body.get("screenId"), body.get("view"))
+                )
+            },
+            "/api/screens/rename": lambda body, now: store.mutate(
+                lambda s: op_rename_screen(s, body.get("screenId"), body.get("name"))
+            ),
+            "/api/screens/delete": lambda body, now: store.mutate(
+                lambda s: op_delete_screen(s, body.get("screenId"))
+            ),
+            "/api/display": lambda body, now: store.mutate(
+                lambda s: op_set_fx(s, body.get("fx"))
+            ),
+            "/api/info": lambda body, now: store.mutate(
+                lambda s: op_set_info(s, body.get("text"))
+            ),
+            "/api/fan": lambda body, now: self._set_fan(body),
         }
+
+    def _set_fan(self, body: dict):
+        """
+        Luefter auf Volllast oder zurueck auf die Kurve.
+
+        Der Luefter-Dienst ist ein eigener Prozess unter einem anderen
+        Benutzer; die Absprache laeuft ueber eine kleine Datei, die er in
+        jedem Durchlauf liest.
+        """
+        force = self.store.mutate(lambda s: op_set_fan_force(s, body.get("force")))
+        path = os.path.join(self.data_dir, "fan-override.json")
+        try:
+            write_json_atomic(path, {"force": force, "updated": int(time.time())})
+        except OSError as err:
+            raise ValueError(f"Konnte den Luefter-Schalter nicht schreiben: {err}") from err
+        return {"fanForce": force}
 
     def _smash_player(self, body: dict):
         action = body.get("action", "add")
         store = self.store
         if action == "add":
-            return {"player": store.mutate(lambda s: op_add_player(s, body.get("name")))}
+            return {
+                "player": store.mutate(
+                    lambda s: op_add_player(s, body.get("name"), body.get("teamId"))
+                )
+            }
         if action == "rename":
             def rename(state):
                 player = find_player(state, body.get("id"))
                 if player is None:
                     raise KeyError("Spieler unbekannt")
-                player["name"] = clamp_name(body.get("name"), player["name"])
+                player["name"] = clamp_name(body.get("name"), player["name"], limit=40)
             return store.mutate(rename)
         if action == "delete":
             def delete(state):
-                players = state["smash"]["players"]
+                players = state["players"]
                 remaining = [p for p in players if p["id"] != body.get("id")]
                 if len(remaining) == len(players):
                     raise KeyError("Spieler unbekannt")
-                state["smash"]["players"] = remaining
+                state["players"] = remaining
             return store.mutate(delete)
         if action == "score":
             return store.mutate(
@@ -900,7 +1281,42 @@ class Handler(BaseHTTPRequestHandler):
                     s, body.get("id"), body.get("field", ""), body.get("delta", 0)
                 )
             )
+        if action == "team":
+            return store.mutate(
+                lambda s: op_set_player_team(s, body.get("id"), body.get("teamId"))
+            )
         raise ValueError(f"Unbekannte Aktion '{action}'")
+
+    # -- Ohne Passwort erreichbar -------------------------------------------
+    def _join(self, body: dict):
+        """Anmeldung eines Gastes ueber den QR-Code."""
+        client = self.address_string()
+        if self.auth.is_blocked(client):
+            return self._error(HTTPStatus.TOO_MANY_REQUESTS, "Zu viele Versuche - kurz warten")
+        try:
+            player = self.store.mutate(
+                lambda s: op_join(s, self._player_id(), body.get("name"), body.get("teamId"))
+            )
+        except ValueError as err:
+            # Fehlversuche mitzaehlen, damit niemand die Liste vollschreibt.
+            time.sleep(self.auth.note_failure(client))
+            return self._error(HTTPStatus.BAD_REQUEST, str(err))
+        self.auth.note_success(client)
+
+        token = self.auth.make_value_token(player["id"], PLAYER_TTL)
+        cookie = f"{PLAYER_COOKIE}={token}; Path=/; Max-Age={PLAYER_TTL}; HttpOnly; SameSite=Lax"
+        self._json({"ok": True, "me": player}, extra={"Set-Cookie": cookie})
+
+    def _screen_hello(self, body: dict):
+        """Ein Bildschirm meldet sich (beim Oeffnen und danach regelmaessig)."""
+        screen_id = clamp_screen_id(body.get("id"))
+        if not screen_id:
+            return self._error(HTTPStatus.BAD_REQUEST, "Ungueltiger Bildschirmname")
+        try:
+            screen = self.store.mutate(lambda s: op_touch_screen(s, screen_id, now_ms()))
+        except ValueError as err:
+            return self._error(HTTPStatus.BAD_REQUEST, str(err))
+        return self._json({"ok": True, "screen": screen})
 
     def _login(self, body: dict):
         client = self.address_string()
@@ -921,7 +1337,8 @@ class Handler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # Start
 # ---------------------------------------------------------------------------
-def build_server(host: str, port: int, data_dir: str) -> ThreadingHTTPServer:
+def build_server(host: str, port: int, data_dir: str,
+                 public_url: str = "") -> ThreadingHTTPServer:
     os.makedirs(data_dir, exist_ok=True)
     store = Store(os.path.join(data_dir, "state.json"))
     auth = Auth(os.path.join(data_dir, "config.json"))
@@ -932,6 +1349,7 @@ def build_server(host: str, port: int, data_dir: str) -> ThreadingHTTPServer:
     BoundHandler.store = store
     BoundHandler.auth = auth
     BoundHandler.data_dir = data_dir
+    BoundHandler.public_url = public_url
 
     httpd = ThreadingHTTPServer((host, port), BoundHandler)
     httpd.daemon_threads = True
@@ -954,6 +1372,12 @@ def main(argv=None) -> int:
         action="store_true",
         help="Nur das Admin-Passwort setzen und beenden",
     )
+    parser.add_argument(
+        "--public-url",
+        default=os.environ.get("LAN_PUBLIC_URL", ""),
+        help="Adresse, die im QR-Code steht (z.B. http://192.168.178.42). "
+             "Ohne Angabe wird sie selbst ermittelt.",
+    )
     args = parser.parse_args(argv)
 
     data_dir = os.path.abspath(args.data)
@@ -969,7 +1393,7 @@ def main(argv=None) -> int:
         print("Admin-Passwort gesetzt.")
         return 0
 
-    httpd = build_server(args.host, args.port, data_dir)
+    httpd = build_server(args.host, args.port, data_dir, args.public_url)
 
     if not httpd.auth.has_password:
         generated = random_password()
@@ -980,9 +1404,13 @@ def main(argv=None) -> int:
         print("  Aendern mit:  python3 leaderboard.py --data <dir> --set-password")
         print("=" * 60)
 
-    print(f"Anzeige : http://{args.host}:{args.port}/")
-    print(f"Admin   : http://{args.host}:{args.port}/admin")
-    print(f"Daten   : {data_dir}")
+    address = local_ip_address() if args.host in ("0.0.0.0", "") else args.host
+    suffix = "" if args.port == 80 else f":{args.port}"
+    print(f"Anzeige   : http://{address}{suffix}/")
+    print(f"Admin     : http://{address}{suffix}/admin")
+    print(f"Mitmachen : http://{address}{suffix}/mitmachen")
+    print(f"Uebersicht: http://{address}{suffix}/seiten")
+    print(f"Daten     : {data_dir}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

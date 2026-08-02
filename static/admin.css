@@ -1,36 +1,24 @@
-/* Steuerseite: grosse Flaechen, damit sie sich am Abend auch auf dem Handy
-   und mit dicken Fingern bedienen laesst. */
-
-:root {
-  --bg: #0b0e17;
-  --panel: #161d2e;
-  --row: #1e2739;
-  --line: #2d3853;
-  --text: #eef2ff;
-  --muted: #93a0c4;
-  --accent: #4d8dff;
-  --team-a: #ff6b4a;
-  --team-b: #34c6ff;
-  --ok: #46d17f;
-  --warn: #ffb347;
-  --bad: #ff5470;
-}
-
-* { box-sizing: border-box; }
+/*
+ * Steuerseite: grosse Flaechen, damit sie sich am Abend auch auf dem Handy
+ * und mit dicken Fingern bedienen laesst. Farben und Effekte kommen aus
+ * theme.css. Die Effekte sind hier bewusst zurueckhaltender als auf der
+ * Anzeige - Bedienbarkeit geht vor Show.
+ */
 
 body {
-  margin: 0;
   padding: 1rem;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.4;
 }
 
-h1 { font-size: 1.4rem; margin: 0; }
-h2 { font-size: 1.15rem; margin: 0 0 0.75rem; letter-spacing: 0.03em; }
-h3 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--muted); font-weight: 600; }
+h1 { font-size: 1.35rem; }
+h2 { font-size: 1.1rem; margin-bottom: 0.75rem; }
+h3 {
+  font-size: 0.85rem;
+  margin: 1.2rem 0 0.5rem;
+  color: var(--muted);
+  text-shadow: none;
+}
 
 .topbar {
   display: flex;
@@ -41,17 +29,8 @@ h3 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--muted); font-weig
   margin-bottom: 1rem;
 }
 
-.topbar-actions { display: flex; gap: 0.5rem; align-items: center; }
-
-.status {
-  font-size: 0.8rem;
-  padding: 0.2em 0.7em;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-}
-.status.online { color: var(--ok); border-color: var(--ok); }
-.status.offline { color: var(--bad); border-color: var(--bad); }
+.topbar-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.topbar-actions .badge { font-size: 0.75rem; }
 
 .layout {
   display: grid;
@@ -60,41 +39,21 @@ h3 { font-size: 0.95rem; margin: 1.2rem 0 0.5rem; color: var(--muted); font-weig
   align-items: start;
 }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 1rem;
-}
+.panel { padding: 1rem; }
 
 /* --- Bedienelemente ----------------------------------------------------- */
-button, input, select {
-  font: inherit;
-  font-family: inherit;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--row);
-  color: var(--text);
-  padding: 0.6rem 0.8rem;
-  min-height: 44px;
-}
-
-input, select { width: 100%; }
-input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); }
-
-button { cursor: pointer; white-space: nowrap; }
-button:hover { border-color: var(--accent); }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-button.primary { background: var(--accent); border-color: var(--accent); color: #06122b; font-weight: 700; }
-button.ghost { background: transparent; color: var(--muted); }
-button.danger { border-color: var(--bad); color: var(--bad); background: transparent; }
-button.big { min-height: 68px; font-size: 1.1rem; font-weight: 700; }
-button.running { background: var(--ok); border-color: var(--ok); color: #062616; }
-button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
+button.big { min-height: 68px; font-size: 1.05rem; font-weight: 700; }
+button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.8rem; }
 
 .field { margin-bottom: 0.75rem; }
-.field label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+.field label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
 .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .row > * { flex: 0 0 auto; }
@@ -104,38 +63,55 @@ button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 
 /* --- Aktives Level ------------------------------------------------------ */
 .current {
-  background: var(--row);
+  background: var(--bg-row);
   border: 1px solid var(--line);
-  border-radius: 12px;
   padding: 0.85rem;
   margin-bottom: 1rem;
 }
 
-.current-name { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.75rem; }
+.current-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
 
 .team-card { display: flex; flex-direction: column; gap: 0.5rem; }
-.team-card .team-label { font-weight: 700; font-size: 0.9rem; }
+.team-card .team-label {
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .team-card.a .team-label { color: var(--team-a); }
 .team-card.b .team-label { color: var(--team-b); }
 
 .clock {
   font-size: 1.9rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   text-align: center;
   padding: 0.2rem 0;
 }
-.clock.finished { color: var(--muted); }
+.team-card.a .clock { color: var(--team-a); }
+.team-card.b .clock { color: var(--team-b); }
+.clock.finished { opacity: 0.55; }
 
-.state-note { font-size: 0.78rem; color: var(--muted); text-align: center; min-height: 1.1em; }
+.state-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  min-height: 1.1em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
 
 /* --- Listen ------------------------------------------------------------- */
 .list { display: flex; flex-direction: column; gap: 0.5rem; }
 
 .list-item {
-  background: var(--row);
+  background: var(--bg-row);
   border: 1px solid var(--line);
-  border-radius: 10px;
   padding: 0.6rem;
   display: flex;
   flex-direction: column;
@@ -145,30 +121,122 @@ button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 .list-item.is-active { border-color: var(--ok); }
 
 .list-item .head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-.list-item .head .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-item .times { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
-.list-item .time-field label { font-size: 0.75rem; color: var(--muted); }
+.list-item .time-field label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
 .list-item .time-field.a label { color: var(--team-a); }
 .list-item .time-field.b label { color: var(--team-b); }
-.list-item input.time { text-align: center; font-variant-numeric: tabular-nums; }
+.list-item input.time { text-align: center; }
 
 .player-row { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; align-items: center; }
-.player-row .score { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
+.player-row .score { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 
-.hint { color: var(--muted); font-size: 0.8rem; margin: 0.4rem 0 0; }
-.empty { color: var(--muted); font-size: 0.9rem; }
+.team-pick { display: flex; gap: 0.35rem; }
+.team-pick button { min-height: 32px; padding: 0.15rem 0.55rem; font-size: 0.75rem; }
+.team-pick button.on-a { background: var(--team-a); border-color: var(--team-a); color: #180a00; }
+.team-pick button.on-b { background: var(--team-b); border-color: var(--team-b); color: #001318; }
 
+.hint { color: var(--muted); font-size: 0.78rem; margin: 0.4rem 0 0; }
+.empty { color: var(--muted); font-size: 0.85rem; }
+
+/* --- Bildschirme: Palette und Ablageflaechen ---------------------------- */
+.views {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.view-chip {
+  border: 1px dashed var(--accent);
+  background: rgba(255, 122, 24, 0.08);
+  color: var(--text);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.8rem;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;          /* sonst scrollt das Handy statt zu ziehen */
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.view-chip.picked {
+  background: var(--accent);
+  color: #180a00;
+  font-weight: 700;
+}
+
+.screens { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.screen-card {
+  border: 1px solid var(--line);
+  background: var(--bg-row);
+  padding: 0.6rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.screen-card.drop-target {
+  border-color: var(--accent);
+  background: rgba(255, 122, 24, 0.14);
+}
+
+.screen-card .screen-name { font-weight: 700; letter-spacing: 0.06em; }
+.screen-card .screen-url { font-size: 0.72rem; color: var(--muted); }
+.screen-card .screen-view {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+  color: var(--accent);
+  border-top: 1px dashed var(--line);
+  padding-top: 0.4rem;
+}
+.screen-card .screen-actions { display: flex; gap: 0.35rem; }
+
+/* Das Element, das beim Ziehen am Finger klebt. */
+#drag-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  background: var(--accent);
+  color: #180a00;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.7rem;
+  transform: translate(-50%, -50%);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* --- Schalter ----------------------------------------------------------- */
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+.switch-row .switch-label { font-size: 0.85rem; }
+.switch-row .switch-label small { display: block; color: var(--muted); font-size: 0.72rem; }
+
+textarea#info-text {
+  min-height: 9rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* --- Meldung ------------------------------------------------------------ */
 #toast {
   position: fixed;
   left: 50%;
   bottom: 1.2rem;
   transform: translateX(-50%);
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  z-index: 150;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  color: var(--text);
   padding: 0.6rem 1rem;
   max-width: 90vw;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 #toast.error { border-color: var(--bad); color: var(--bad); }
 #toast.ok { border-color: var(--ok); }
@@ -177,7 +245,6 @@ button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 .login {
   max-width: 380px;
   margin: 12vh auto 0;
+  padding: 1.5rem;
 }
-.login p { color: var(--muted); font-size: 0.9rem; }
-
-[hidden] { display: none !important; }
+.login p { color: var(--muted); font-size: 0.85rem; }

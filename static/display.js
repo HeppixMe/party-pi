@@ -35,16 +35,33 @@ const el = {
 
 let state = null;
 let liveCells = []; // { node, timer } - nur diese Zellen muessen ticken
+let knownLevelIds = null;   // null = erster Aufbau, da soll es nicht glitchen
 
 function teamName(id) {
   const team = state?.sos?.teams?.find((t) => t.id === id);
   return team?.name || (id === 'a' ? 'Team 1' : 'Team 2');
 }
 
+/**
+ * Kurzer Glitch, wenn ein neues Level dazukommt. Beim allerersten Aufbau
+ * bleibt es ruhig - sonst zuckt die Anzeige bei jedem Seitenaufruf.
+ */
+function glitchOnNewLevel(levels) {
+  const ids = levels.map((level) => level.id);
+  if (knownLevelIds !== null && ids.some((id) => !knownLevelIds.includes(id))) {
+    el.sosTable.classList.remove('glitch');
+    void el.sosTable.offsetWidth;         // Neustart der Animation erzwingen
+    el.sosTable.classList.add('glitch');
+    setTimeout(() => el.sosTable.classList.remove('glitch'), 800);
+  }
+  knownLevelIds = ids;
+}
+
 function renderSos() {
   const levels = state?.sos?.levels || [];
   el.headA.textContent = teamName('a');
   el.headB.textContent = teamName('b');
+  glitchOnNewLevel(levels);
 
   el.sosTable.hidden = levels.length === 0;
   el.sosEmpty.hidden = levels.length > 0;
@@ -98,7 +115,7 @@ function renderSos() {
 }
 
 function renderSmash() {
-  const players = sortPlayers(state?.smash?.players || []);
+  const players = sortPlayers(state?.players || []);
   el.smashEmpty.hidden = players.length > 0;
   el.smashList.replaceChildren();
 
@@ -106,6 +123,8 @@ function renderSmash() {
   players.forEach((player, index) => {
     const item = document.createElement('li');
     if (index < 3 && player.wins > 0) item.classList.add(medals[index]);
+    // Punkt in Teamfarbe vor dem Namen (siehe .ranking li.of-a im CSS).
+    if (player.teamId) item.classList.add(`of-${player.teamId}`);
 
     const rank = document.createElement('span');
     rank.className = 'rank';
@@ -181,7 +200,8 @@ async function pollFan() {
     const status = await response.json();
     if (typeof status.tempC === 'number') {
       const speed = typeof status.percent === 'number' ? ` · Lüfter ${status.percent} %` : '';
-      el.fanBadge.textContent = `${status.tempC.toFixed(1)} °C${speed}`;
+      const forced = status.force ? ' · MAX' : '';
+      el.fanBadge.textContent = `${status.tempC.toFixed(1)} °C${speed}${forced}`;
       el.fanBadge.hidden = false;
     } else {
       el.fanBadge.hidden = true;

@@ -49,6 +49,7 @@ DEFAULTS = {
     "min_hold": "15",
     "idle_percent": "0",
     "status_file": "",
+    "override_file": "",
     "thermal_zone": "auto",
     "gpio_pin": "",
     "gpio_active_low": "false",
@@ -193,9 +194,23 @@ def read_temperature(zone: str | None) -> float | None:
 # ---------------------------------------------------------------------------
 class Backend:
     name = "none"
+    #: Kann dieses Verfahren ueberhaupt etwas schalten? Beim reinen Beobachten
+    #: nicht - dann soll der Admin einen Hinweis statt einer wirkungslosen
+    #: Schaltflaeche sehen.
+    controllable = True
 
     def apply_curve(self, steps, hysteresis: float) -> None:
         """Einmalig beim Start - nur fuer Verfahren, bei denen der Kernel regelt."""
+
+    def force_max(self, on: bool, steps, hysteresis: float) -> None:
+        """
+        Volllast erzwingen oder zurueck zur Kurve.
+
+        Standardweg fuer alle Verfahren, die die Leistung direkt setzen; die
+        Kernel-Variante ueberschreibt das, weil dort die Schaltpunkte zaehlen.
+        """
+        if on:
+            self.set_percent(100)
 
     def set_percent(self, percent: int) -> None:
         """Luefterleistung setzen (0-100)."""
@@ -210,6 +225,7 @@ class Backend:
 
 class MonitorBackend(Backend):
     name = "monitor"
+    controllable = False
 
 
 class TripPointBackend(Backend):
@@ -256,6 +272,19 @@ class TripPointBackend(Backend):
         actual = [int(value) // 1000 for value in written if value and value.isdigit()]
         if actual != temps:
             log(f"[!] Schaltpunkte weichen ab (gesetzt: {actual}) - Kernel hat Werte angepasst.")
+
+    def force_max(self, on: bool, steps, hysteresis: float) -> None:
+        """
+        Beim kernelgeregelten Luefter laesst sich die Leistung nicht direkt
+        setzen - der Regler wuerde sie sofort ueberschreiben. Stattdessen
+        werden die Schaltpunkte so weit nach unten gezogen, dass die hoechste
+        Stufe immer greift. Beim Zurueckschalten kommt die Kurve wieder.
+        """
+        if on:
+            low = [(float(index), 100) for index in range(len(self.trips) or 1)]
+            self.apply_curve(low, 0)
+        else:
+            self.apply_curve(steps, hysteresis)
 
     def read_percent(self) -> int | None:
         if not self.cooling_device:
@@ -507,8 +536,49 @@ class Controller:
         self.last_change = 0.0
         self.running = True
 
+        # Volllast-Schalter aus der Weboberflaeche. Webserver und dieser Dienst
+        # laufen als verschiedene Benutzer in getrennten Prozessen - eine
+        # kleine Datei ist hier der einfachste verlaessliche Weg.
+        self.override_file = config.get("override_file", "").strip()
+        if not self.override_file and self.status_file:
+            self.override_file = os.path.join(
+                os.path.dirname(os.path.abspath(self.status_file)), "fan-override.json"
+            )
+        self.forced = False
+
+    def read_override(self) -> bool:
+        """Steht der Volllast-Schalter auf an?"""
+        if not self.override_file:
+            return False
+        try:
+            with open(self.override_file, "r", encoding="utf-8") as fh:
+                return bool(json.load(fh).get("force"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError, AttributeError):
+            return False
+
+    def apply_override(self, forced: bool) -> None:
+        """Umschalten zwischen Volllast und Kurve - nur bei echter Aenderung."""
+        if forced == self.forced:
+            return
+        self.forced = forced
+        if not self.backend.controllable:
+            log("[!] Volllast angefordert, aber kein steuerbarer Luefter vorhanden.")
+            return
+        log("==> Luefter: " + ("VOLLLAST (100 %)" if forced else "wieder nach Kurve"))
+        self.backend.force_max(forced, self.steps, self.hysteresis)
+        if forced:
+            self.percent = 100
+        else:
+            # Regelung neu einschwingen lassen, statt auf einem alten Wert zu
+            # verharren.
+            self.index = -1
+            self.percent = self.idle_percent
+            self.last_change = 0.0
+
     def step(self, temp: float | None, now: float) -> int:
         """Einen Regelschritt rechnen und ausfuehren; gibt die Stufe in % zurueck."""
+        if self.forced:
+            return 100          # Volllast schlaegt die Kurve
         if temp is None:
             return self.percent
         target = next_step(self.steps, temp, self.index, self.hysteresis)
@@ -531,6 +601,8 @@ class Controller:
             "tempC": round(temp, 1) if temp is not None else None,
             "percent": measured if measured is not None else self.percent,
             "backend": self.backend.name,
+            "controllable": self.backend.controllable,
+            "force": self.forced,
             "updated": int(time.time()),
         }
         directory = os.path.dirname(os.path.abspath(self.status_file))
@@ -548,6 +620,7 @@ class Controller:
         if not self.zone:
             log("[!] Keine Thermal-Zone gefunden - es gibt nichts zu messen.")
         while self.running:
+            self.apply_override(self.read_override())
             temp = read_temperature(self.zone)
             self.step(temp, time.monotonic())
             self.write_status(temp)
@@ -595,6 +668,7 @@ def main(argv=None) -> int:
         return 1
 
     if args.once:
+        controller.apply_override(controller.read_override())
         temp = read_temperature(controller.zone)
         percent = controller.step(temp, time.monotonic())
         controller.write_status(temp)

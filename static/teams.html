@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kader – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Kader</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <div class="roster">
+    <section class="panel a">
+      <h2 id="name-a">Team 1</h2>
+      <p class="count" id="count-a">0 Spieler</p>
+      <ul id="list-a"></ul>
+      <p class="subtle" id="empty-a">Noch niemand eingetragen</p>
+    </section>
+    <section class="panel b">
+      <h2 id="name-b">Team 2</h2>
+      <p class="count" id="count-b">0 Spieler</p>
+      <ul id="list-b"></ul>
+      <p class="subtle" id="empty-b">Noch niemand eingetragen</p>
+    </section>
+  </div>
+
+  <p class="subtle" id="unassigned" hidden></p>
+
+  <script type="module" src="/static/teams.js"></script>
+</body>
+</html>

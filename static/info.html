@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Info – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Info</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <section class="panel page-body">
+    <pre class="board-text" id="text"></pre>
+  </section>
+
+  <script type="module">
+    import { connectEvents } from '/static/common.js';
+    const conn = document.getElementById('conn');
+    connectEvents({
+      // textContent, nicht innerHTML: der Text kommt aus einem Eingabefeld
+      // und darf niemals als Markup ausgefuehrt werden.
+      onState: (payload) => {
+        document.getElementById('text').textContent = payload.state?.info?.text || '';
+      },
+      onStatus: (online) => {
+        conn.textContent = online ? 'live' : 'keine Verbindung';
+        conn.classList.toggle('online', online);
+        conn.classList.toggle('offline', !online);
+      },
+    });
+  </script>
+</body>
+</html>

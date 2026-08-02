@@ -1,31 +1,10 @@
-/* Anzeige-Seite: dunkel, sehr kontrastreich, aus mehreren Metern lesbar. */
+/*
+ * Anzeige-Seite fuer den Fernseher: sehr grosse Schrift, hoher Kontrast,
+ * aus mehreren Metern lesbar. Farben und Effekte kommen aus theme.css,
+ * hier steht nur das Layout.
+ */
 
-:root {
-  --bg: #0b0e17;
-  --bg-panel: #141a29;
-  --bg-row: #1b2336;
-  --line: #2b3550;
-  --text: #eef2ff;
-  --muted: #8d9ac0;
-  --team-a: #ff6b4a;
-  --team-b: #34c6ff;
-  --gold: #ffcc4d;
-  --silver: #cfd8f0;
-  --bronze: #e08a4a;
-  --ok: #46d17f;
-  --bad: #ff5470;
-}
-
-* { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  height: 100%;
-  background: var(--bg);
-  color: var(--text);
-  font-family: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
-  overflow: hidden;
-}
+html, body { height: 100%; overflow: hidden; }
 
 body {
   display: flex;
@@ -43,27 +22,10 @@ body {
   flex: 0 0 auto;
 }
 
-.topbar h1 {
-  margin: 0;
-  font-size: clamp(1.4rem, 3.4vh, 3rem);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+.topbar h1 { font-size: clamp(1.3rem, 3.2vh, 2.8rem); }
 
 .badges { display: flex; gap: 0.6rem; align-items: center; }
-
-.badge {
-  font-size: clamp(0.7rem, 1.6vh, 1.1rem);
-  padding: 0.25em 0.8em;
-  border-radius: 999px;
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.badge-live.online { color: var(--ok); border-color: var(--ok); }
-.badge-live.offline { color: var(--bad); border-color: var(--bad); }
+.badges .badge { font-size: clamp(0.7rem, 1.6vh, 1.05rem); }
 
 /* --- Aufteilung --------------------------------------------------------- */
 .board {
@@ -78,10 +40,7 @@ body {
   .board { grid-template-columns: 1fr; grid-template-rows: 1.3fr 1fr; }
 }
 
-.panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--line);
-  border-radius: clamp(8px, 1.2vh, 18px);
+.board .panel {
   padding: clamp(0.5rem, 1.4vh, 1.3rem);
   display: flex;
   flex-direction: column;
@@ -98,27 +57,23 @@ body {
   margin-bottom: clamp(0.3rem, 0.9vh, 0.9rem);
 }
 
-.panel-head h2 {
-  margin: 0;
-  font-size: clamp(1.1rem, 2.8vh, 2.2rem);
-  letter-spacing: 0.04em;
-}
+.panel-head h2 { font-size: clamp(1rem, 2.6vh, 2rem); }
 
 .lead {
   margin: 0;
   color: var(--muted);
   font-size: clamp(0.75rem, 1.8vh, 1.3rem);
   text-align: right;
+  letter-spacing: 0.06em;
 }
 
 .lead strong { color: var(--text); }
-.lead .team-a { color: var(--team-a); }
-.lead .team-b { color: var(--team-b); }
 
 .empty {
   margin: auto;
   color: var(--muted);
   font-size: clamp(0.9rem, 2.2vh, 1.6rem);
+  letter-spacing: 0.08em;
 }
 
 /* Inhalt mittig in der freien Hoehe - mit wenigen Zeilen wirkt das Board
@@ -137,7 +92,6 @@ body {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  font-variant-numeric: tabular-nums;
 }
 
 .grid th, .grid td {
@@ -150,61 +104,69 @@ body {
   color: var(--muted);
   border-bottom: 2px solid var(--line);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .grid thead th.col-level { text-align: left; }
-.grid thead th#head-a { color: var(--team-a); }
-.grid thead th#head-b { color: var(--team-b); }
+.grid thead th#head-a { color: var(--team-a); text-shadow: var(--glow); }
+.grid thead th#head-b { color: var(--team-b); text-shadow: var(--glow-b); }
 
 .col-level { width: 34%; }
 
 .grid tbody td, .grid tbody th {
   font-size: clamp(1rem, 3.4vh, 3rem);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .grid tbody th {
   text-align: left;
   font-weight: 500;
-  font-size: clamp(0.85rem, 2.4vh, 2rem);
+  font-size: clamp(0.85rem, 2.4vh, 1.9rem);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.05em;
 }
 
 .grid tbody tr { border-bottom: 1px solid var(--line); }
 
 .grid tbody tr.active {
-  background: var(--bg-row);
+  background: linear-gradient(90deg, rgba(255, 122, 24, 0.16), transparent 70%);
 }
 
 .grid tbody tr.active th { color: var(--text); }
 
 .grid tbody tr.active th::before {
-  content: "▶ ";
-  color: var(--ok);
+  content: "> ";
+  color: var(--accent);
 }
 
-td.running { color: var(--text); }
-td.done { color: var(--muted); }
-td.done.best { color: var(--ok); }
-td.pending { color: var(--muted); opacity: 0.55; }
+/* Team 1 orange, Team 2 cyan - die Farbe steckt in der Spalte, damit man
+   die Zeit auch ohne Blick auf die Kopfzeile zuordnen kann. */
+.grid tbody td:nth-child(2) { color: var(--team-a); }
+.grid tbody td:nth-child(3) { color: var(--team-b); }
+
+td.running { text-shadow: var(--glow); }
+td.done { opacity: 0.75; }
+td.done.best { opacity: 1; text-shadow: var(--glow); }
+td.pending { opacity: 0.35; }
 
 /* Punkt, der zeigt, dass diese Uhr gerade laeuft. */
 td.running::after {
   content: "";
   display: inline-block;
-  width: 0.32em;
-  height: 0.32em;
+  width: 0.3em;
+  height: 0.3em;
   margin-left: 0.35em;
-  border-radius: 50%;
-  background: var(--ok);
+  background: currentColor;
   vertical-align: middle;
+}
+
+html[data-fx="full"] td.running::after {
   animation: pulse 1.6s ease-in-out infinite;
 }
 
@@ -212,25 +174,26 @@ td.running::after {
 
 .grid tfoot th, .grid tfoot td {
   border-top: 2px solid var(--line);
-  font-size: clamp(0.95rem, 2.6vh, 2.2rem);
+  font-size: clamp(0.95rem, 2.6vh, 2.1rem);
 }
 
 .grid tfoot .row-total td { font-weight: 700; }
 .grid tfoot .row-wins th, .grid tfoot .row-wins td {
-  font-size: clamp(0.8rem, 1.9vh, 1.5rem);
+  font-size: clamp(0.8rem, 1.9vh, 1.4rem);
   color: var(--muted);
   border-top: none;
   padding-top: 0;
 }
 
 .grid tfoot th { text-align: left; color: var(--muted); }
-.grid tfoot td.leader { color: var(--gold); }
+.grid tfoot td.leader { color: var(--gold); text-shadow: 0 0 0.35em rgba(255, 176, 32, 0.6); }
 
 /* Muss .grid tbody td in der Spezifitaet schlagen, sonst erbt der Hinweis
    die grosse Ziffernschrift der Zeitzellen. */
 .grid tbody td.more-hint {
   color: var(--muted);
-  font-size: clamp(0.7rem, 1.6vh, 1.1rem);
+  font-size: clamp(0.7rem, 1.6vh, 1.05rem);
+  font-weight: 400;
   text-align: left;
   padding-top: 0.3rem;
 }
@@ -254,44 +217,63 @@ td.running::after {
   align-items: center;
   gap: clamp(0.3rem, 0.8vw, 0.9rem);
   background: var(--bg-row);
-  border-radius: 8px;
+  border-left: 3px solid var(--line);
   padding: clamp(0.2rem, 0.8vh, 0.7rem) clamp(0.4rem, 0.8vw, 1rem);
 }
 
+.ranking li.gold { border-left-color: var(--gold); }
+.ranking li.silver { border-left-color: var(--silver); }
+.ranking li.bronze { border-left-color: var(--bronze); }
+
 .ranking .rank {
-  font-size: clamp(0.9rem, 2.4vh, 2rem);
+  font-size: clamp(0.9rem, 2.4vh, 1.9rem);
   font-weight: 700;
   color: var(--muted);
   text-align: center;
 }
 
-.ranking li.gold .rank { color: var(--gold); }
+.ranking li.gold .rank { color: var(--gold); text-shadow: 0 0 0.35em rgba(255, 176, 32, 0.6); }
 .ranking li.silver .rank { color: var(--silver); }
 .ranking li.bronze .rank { color: var(--bronze); }
 
 .ranking .name {
-  font-size: clamp(0.95rem, 2.6vh, 2.1rem);
-  font-weight: 600;
+  font-size: clamp(0.95rem, 2.5vh, 2rem);
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: 0.04em;
 }
+
+/* Kleiner Punkt in Teamfarbe vor dem Namen, damit man auf der Smash-Liste
+   sieht, wer zu welchem Team gehoert. */
+.ranking .name::before {
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 0.5em;
+  vertical-align: middle;
+  background: var(--muted);
+  opacity: 0.4;
+}
+
+.ranking li.of-a .name::before { background: var(--team-a); opacity: 1; }
+.ranking li.of-b .name::before { background: var(--team-b); opacity: 1; }
 
 .ranking .score {
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .ranking .wins {
-  font-size: clamp(1rem, 2.8vh, 2.3rem);
+  font-size: clamp(1rem, 2.7vh, 2.2rem);
   font-weight: 700;
+  color: var(--accent);
 }
 
 .ranking .detail {
   display: block;
-  font-size: clamp(0.65rem, 1.5vh, 1rem);
+  font-size: clamp(0.65rem, 1.5vh, 0.95rem);
   color: var(--muted);
 }
-
-[hidden] { display: none !important; }

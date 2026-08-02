@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mitmachen – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <section class="panel join">
+    <h1>Mitmachen</h1>
+    <p class="subtle" id="lead">Name eintragen und Team wählen</p>
+
+    <p class="join-state" id="state" hidden></p>
+
+    <form id="form">
+      <div class="field">
+        <label for="name">Dein Name</label>
+        <input type="text" id="name" maxlength="40" autocomplete="nickname"
+               placeholder="z. B. Mia" required>
+      </div>
+
+      <div class="field">
+        <label>Dein Team</label>
+        <div class="team-choice">
+          <button type="button" data-team="a" id="team-a">Team 1</button>
+          <button type="button" data-team="b" id="team-b">Team 2</button>
+        </div>
+      </div>
+
+      <button class="primary big" style="width: 100%" type="submit" id="submit">
+        Eintragen
+      </button>
+    </form>
+
+    <p class="join-error" id="error" hidden></p>
+
+    <p class="links">
+      <a href="/teams">→ Wer ist schon dabei?</a><br>
+      <a href="/">→ Leaderboard</a>
+    </p>
+  </section>
+
+  <script type="module" src="/static/join.js"></script>
+</body>
+</html>

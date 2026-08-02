@@ -2,6 +2,31 @@
 
 export const TEAM_IDS = ['a', 'b'];
 
+/**
+ * Effektstufe anwenden. Der Admin schaltet zwischen "full" und "plain" um;
+ * alle Animationen im CSS haengen an diesem Attribut. Die Seiten starten
+ * absichtlich in "plain", damit beim Laden nichts aufblitzt, bevor der
+ * Zustand da ist.
+ */
+export function applyFx(fx) {
+  document.documentElement.dataset.fx = fx === 'full' ? 'full' : 'plain';
+}
+
+/** Ebene fuer den wandernden Scanbalken - jede Seite bekommt sie automatisch. */
+function ensureScanbar() {
+  if (document.querySelector('.scanbar')) return;
+  const bar = document.createElement('div');
+  bar.className = 'scanbar';
+  bar.setAttribute('aria-hidden', 'true');
+  document.body.append(bar);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', ensureScanbar);
+} else {
+  ensureScanbar();
+}
+
 // Zeitversatz zwischen Pi und diesem Browser. Der Server schickt in jeder
 // Nachricht seine eigene Uhrzeit mit; damit rechnen wir alle Uhren auf die
 // Pi-Zeit um und die Anzeige stimmt auch auf einem Rechner mit falscher Uhr.
@@ -73,6 +98,17 @@ export function computeStandings(state, now = serverNow()) {
   return { totals, levelWins: wins, leader };
 }
 
+/** Name eines Teams aus dem Zustand, mit sinnvollem Ersatz. */
+export function teamName(state, id) {
+  const team = state?.sos?.teams?.find((t) => t.id === id);
+  return team?.name || (id === 'a' ? 'Team 1' : 'Team 2');
+}
+
+/** Spieler eines Teams, in Ranglisten-Reihenfolge. */
+export function playersOfTeam(state, teamId) {
+  return sortPlayers((state?.players || []).filter((p) => p.teamId === teamId));
+}
+
 /** Smash-Rangliste: meiste Siege, dann bessere Quote, dann weniger Niederlagen. */
 export function sortPlayers(players) {
   return [...(players || [])].sort((x, y) => {
@@ -129,6 +165,7 @@ export function connectEvents({ onState, onStatus }) {
         return;
       }
       noteServerTime(payload.serverNow);
+      applyFx(payload.state?.display?.fx);
       onStatus?.(true);
       // Ein Fehler beim Zeichnen darf die naechste Nachricht nicht verhindern -
       // die Seite soll sich vom naechsten Update wieder fangen.
@@ -144,6 +181,22 @@ export function connectEvents({ onState, onStatus }) {
     clearTimeout(retryTimer);
     source?.close();
   };
+}
+
+/**
+ * Einmalige Abfrage des vollen Zustands.
+ *
+ * Noetig fuer die Felder, die von der einzelnen Anfrage abhaengen und deshalb
+ * nicht im Live-Strom stehen koennen: "me" (wer sitzt an diesem Geraet, laut
+ * Cookie) und "joinUrl" (haengt am Host, ueber den die Seite geoeffnet wurde).
+ */
+export async function fetchState() {
+  const response = await fetch('/api/state');
+  if (!response.ok) throw new Error(`Zustand nicht abrufbar (${response.status})`);
+  const payload = await response.json();
+  noteServerTime(payload.serverNow);
+  applyFx(payload.state?.display?.fx);
+  return payload;
 }
 
 /** POST an die API; wirft mit der Fehlermeldung des Servers. */

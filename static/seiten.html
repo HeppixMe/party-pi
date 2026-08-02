@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seiten – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Alle Seiten</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <div class="page-body">
+    <ul class="page-list">
+      <li class="panel"><a href="/">
+        <span class="name">Leaderboard</span><span class="path">/</span>
+        <span class="what">SOS mit beiden Uhren und die Smash-Rangliste. Die Hauptansicht für den Fernseher.</span>
+      </a></li>
+      <li class="panel"><a href="/qr">
+        <span class="name">Mitmachen</span><span class="path">/qr</span>
+        <span class="what">Großer QR-Code plus Adresse zum Abtippen. Auf einen Bildschirm legen, damit Gäste sich eintragen.</span>
+      </a></li>
+      <li class="panel"><a href="/mitmachen">
+        <span class="name">Anmeldung</span><span class="path">/mitmachen</span>
+        <span class="what">Die Seite hinter dem QR-Code: Name eintragen, Team wählen. Fürs Handy gemacht.</span>
+      </a></li>
+      <li class="panel"><a href="/teams">
+        <span class="name">Kader</span><span class="path">/teams</span>
+        <span class="what">Wer ist in welchem Team. Aktualisiert sich, sobald sich jemand anmeldet.</span>
+      </a></li>
+      <li class="panel"><a href="/system">
+        <span class="name">Systemstatus</span><span class="path">/system</span>
+        <span class="what">Temperatur, Lüfterstufe, Laufzeit, Adresse und verbundene Geräte des Pi.</span>
+      </a></li>
+      <li class="panel"><a href="/info">
+        <span class="name">Info-Tafel</span><span class="path">/info</span>
+        <span class="what">WLAN-Zugang, Ablauf, Regeln — der Text lässt sich im Admin bearbeiten.</span>
+      </a></li>
+      <li class="panel"><a href="/screen/tv">
+        <span class="name">Bildschirm</span><span class="path">/screen/&lt;name&gt;</span>
+        <span class="what">Auf einem Gerät öffnen, Name frei wählbar. Was er zeigt, bestimmst du im Admin per Ziehen.</span>
+      </a></li>
+      <li class="panel"><a href="/admin">
+        <span class="name">Steuerung</span><span class="path">/admin</span>
+        <span class="what">Level, Zeiten, Ergebnisse, Bildschirme, Effekte und Lüfter. Passwort nötig.</span>
+      </a></li>
+    </ul>
+  </div>
+
+  <script type="module">
+    import { connectEvents } from '/static/common.js';
+    const conn = document.getElementById('conn');
+    connectEvents({
+      onStatus: (online) => {
+        conn.textContent = online ? 'live' : 'keine Verbindung';
+        conn.classList.toggle('online', online);
+        conn.classList.toggle('offline', !online);
+      },
+    });
+  </script>
+</body>
+</html>

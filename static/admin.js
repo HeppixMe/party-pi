@@ -10,9 +10,11 @@ import {
   isRunning,
   serverNow,
   sortPlayers,
+  teamName as teamNameOf,
   timerValue,
   winRate,
 } from '/static/common.js';
+import { renderScreens, renderViews } from '/static/screens.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -240,7 +242,7 @@ function renderLevels() {
 
 // -- Smash -------------------------------------------------------------------
 function renderPlayers() {
-  const players = sortPlayers(state?.smash?.players || []);
+  const players = sortPlayers(state?.players || []);
   const list = $('players');
   $('players-empty').hidden = players.length > 0;
   list.replaceChildren();
@@ -262,6 +264,23 @@ function renderPlayers() {
     score.className = 'score';
     score.textContent = `${player.wins}:${player.losses} · ${winRate(player)} %`;
     head.append(nameInput, score);
+
+    // Team-Zuordnung: erneutes Antippen desselben Teams loest die Zuordnung
+    // wieder - so lassen sich versehentliche Klicks zuruecknehmen.
+    const teamPick = document.createElement('div');
+    teamPick.className = 'team-pick';
+    for (const team of TEAM_IDS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = teamNameOf(state, team);
+      if (player.teamId === team) button.classList.add(`on-${team}`);
+      button.addEventListener('click', () => send('/api/smash/player', {
+        action: 'team',
+        id: player.id,
+        teamId: player.teamId === team ? null : team,
+      }));
+      teamPick.append(button);
+    }
 
     const buttons = document.createElement('div');
     buttons.className = 'row';
@@ -287,7 +306,7 @@ function renderPlayers() {
       }),
     );
 
-    item.append(head, buttons);
+    item.append(head, teamPick, buttons);
     list.append(item);
   }
 
@@ -383,7 +402,12 @@ $('add-match').addEventListener('click', () => {
 for (const button of document.querySelectorAll('button[data-reset]')) {
   button.addEventListener('click', () => {
     const scope = button.dataset.reset;
-    const what = { sos: 'die SOS-Level', smash: 'die Smash-Wertung', all: 'ALLES' }[scope];
+    const what = {
+      sos: 'die SOS-Level',
+      smash: 'alle Siege und Niederlagen',
+      players: 'alle Spieler',
+      all: 'ALLES',
+    }[scope];
     if (confirm(`Wirklich ${what} zurücksetzen? Das lässt sich nicht rückgängig machen.`)) {
       send('/api/reset', { scope });
     }
@@ -395,6 +419,77 @@ $('logout').addEventListener('click', async () => {
   window.location.href = '/admin';
 });
 
+// -- Bildschirme -------------------------------------------------------------
+function renderScreenBlock(payload) {
+  const views = payload.views || [];
+  const screens = payload.state?.screens || [];
+
+  // Die Palette haengt nur an der Ansichtsliste - die aendert sich nie, also
+  // nur einmal aufbauen. Sonst risse jeder Zustandsschub ein laufendes Ziehen ab.
+  if (!$('views').childElementCount && views.length) {
+    renderViews($('views'), views);
+  }
+
+  $('screens-empty').hidden = screens.length > 0;
+  $('screen-count').textContent = screens.length ? `(${screens.length})` : '';
+  renderScreens($('screens'), screens, views, serverNow(), {
+    assign: (screenId, view) => send('/api/screens/assign', { screenId, view }),
+    remove: (screenId) => send('/api/screens/delete', { screenId }),
+  });
+}
+
+// -- Effekte, Luefter, Info-Tafel --------------------------------------------
+function renderSettings() {
+  const full = state?.display?.fx === 'full';
+  const fx = $('fx-toggle');
+  fx.textContent = full ? 'Volles Programm' : 'Schlicht';
+  fx.classList.toggle('primary', full);
+
+  const forced = Boolean(state?.fan?.force);
+  const fan = $('fan-toggle');
+  fan.textContent = forced ? '100 % (an)' : 'Nach Kurve';
+  fan.classList.toggle('danger', forced);
+
+  syncInput($('info-text'), state?.info?.text ?? '');
+}
+
+$('fx-toggle').addEventListener('click', () =>
+  send('/api/display', { fx: state?.display?.fx === 'full' ? 'plain' : 'full' }));
+
+$('fan-toggle').addEventListener('click', () =>
+  send('/api/fan', { force: !state?.fan?.force }));
+
+$('save-info').addEventListener('click', async () => {
+  await send('/api/info', { text: $('info-text').value });
+  $('info-saved').textContent = 'gespeichert';
+  setTimeout(() => { $('info-saved').textContent = ''; }, 2000);
+});
+
+// Der Luefter-Schalter nuetzt nichts, wenn der Dienst kein steuerbares
+// Verfahren gefunden hat - dann soll das dranstehen statt einer wirkungslosen
+// Schaltflaeche.
+async function pollFanBackend() {
+  try {
+    const status = await (await fetch('/api/fan')).json();
+    const note = $('fan-note');
+    if (status.backend === 'monitor') {
+      note.textContent = 'kein steuerbarer Lüfter gefunden – Schalter ohne Wirkung';
+      $('fan-toggle').disabled = true;
+    } else {
+      const parts = [];
+      if (status.backend) parts.push(status.backend);
+      if (typeof status.tempC === 'number') parts.push(`${status.tempC.toFixed(1)} °C`);
+      note.textContent = 'dauerhaft 100 % statt nach Kurve'
+        + (parts.length ? ` (${parts.join(' · ')})` : '');
+      $('fan-toggle').disabled = false;
+    }
+  } catch (err) {
+    /* nicht schlimm - der Schalter funktioniert trotzdem */
+  }
+}
+pollFanBackend();
+setInterval(pollFanBackend, 5000);
+
 // -- Start -------------------------------------------------------------------
 connectEvents({
   onState: (payload) => {
@@ -404,6 +499,8 @@ connectEvents({
       renderCurrent();
       renderLevels();
       renderPlayers();
+      renderScreenBlock(payload);
+      renderSettings();
     });
   },
   onStatus: (online) => {

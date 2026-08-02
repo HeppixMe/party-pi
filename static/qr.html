@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mitmachen – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Mitmachen</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <div class="qr-layout">
+    <div class="qr-frame panel">
+      <img id="qr" src="/api/qr.svg" alt="QR-Code zur Anmeldung">
+    </div>
+
+    <div class="qr-steps">
+      <ol>
+        <li>Handy-Kamera auf den Code halten</li>
+        <li>Namen eintragen</li>
+        <li>Team wählen – fertig</li>
+      </ol>
+      <div class="qr-manual">
+        <p class="subtle">Oder von Hand eintippen:</p>
+        <p class="qr-url" id="url">…</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { connectEvents, fetchState } from '/static/common.js';
+
+    const conn = document.getElementById('conn');
+
+    // Die Beitritts-Adresse haengt am Host dieser Anfrage und steht deshalb
+    // nur in /api/state - sie aendert sich waehrend des Abends nicht.
+    fetchState()
+      .then((payload) => {
+        document.getElementById('url').textContent =
+          (payload.joinUrl || '').replace(/^https?:\/\//, '');
+      })
+      .catch(() => { document.getElementById('url').textContent = 'siehe QR-Code'; });
+
+    connectEvents({
+      onStatus: (online) => {
+        conn.textContent = online ? 'live' : 'keine Verbindung';
+        conn.classList.toggle('online', online);
+        conn.classList.toggle('offline', !online);
+      },
+    });
+  </script>
+</body>
+</html>

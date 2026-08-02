@@ -1,17 +1,19 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-fx="plain">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Steuerung – LAN-Party Leaderboard</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
   <header class="topbar">
     <h1>Steuerung</h1>
     <div class="topbar-actions">
-      <span class="status" id="conn">verbinde…</span>
+      <span class="badge" id="conn">verbinde…</span>
+      <a href="/seiten" target="_blank"><button class="ghost small" type="button">Seiten</button></a>
       <a href="/" target="_blank"><button class="ghost small" type="button">Anzeige</button></a>
       <button class="ghost small" id="logout" type="button">Abmelden</button>
     </div>
@@ -98,9 +100,56 @@
 
       <h3>Zurücksetzen</h3>
       <div class="row">
-        <button class="danger" data-reset="sos" type="button">SOS leeren</button>
-        <button class="danger" data-reset="smash" type="button">Smash leeren</button>
+        <button class="danger" data-reset="sos" type="button">SOS-Level leeren</button>
+        <button class="danger" data-reset="smash" type="button">Siege auf 0</button>
+        <button class="danger" data-reset="players" type="button">Spieler löschen</button>
         <button class="danger" data-reset="all" type="button">Alles leeren</button>
+      </div>
+    </section>
+
+    <!-- ------------------------------------------------------ Bildschirme -->
+    <section class="panel">
+      <h2>Bildschirme</h2>
+      <p class="hint" style="margin-top:0">
+        Auf dem Gerät einmal <code>/screen/&lt;name&gt;</code> öffnen – es meldet sich
+        von selbst an. Ansicht hierher ziehen oder antippen und dann den Bildschirm
+        antippen.
+      </p>
+
+      <h3>Ansichten</h3>
+      <div class="views" id="views"></div>
+
+      <h3>Angemeldete Bildschirme <span class="hint" id="screen-count"></span></h3>
+      <div class="screens" id="screens"></div>
+      <p class="empty" id="screens-empty">Noch kein Bildschirm angemeldet.</p>
+    </section>
+
+    <!-- ----------------------------------------------- Anzeige, Pi, Info -->
+    <section class="panel">
+      <h2>Anzeige &amp; Pi</h2>
+
+      <div class="switch-row">
+        <span class="switch-label">
+          Effekte
+          <small>Scanlines, Flackern, Glitch – gilt sofort für alle Geräte</small>
+        </span>
+        <button id="fx-toggle" type="button">…</button>
+      </div>
+
+      <div class="switch-row">
+        <span class="switch-label">
+          Lüfter
+          <small id="fan-note">dauerhaft auf 100 % statt nach Kurve</small>
+        </span>
+        <button id="fan-toggle" type="button">…</button>
+      </div>
+
+      <h3>Info-Tafel</h3>
+      <textarea id="info-text" maxlength="4000"
+                placeholder="WLAN, Ablauf, Regeln …"></textarea>
+      <div class="row" style="margin-top:0.5rem">
+        <button class="primary" id="save-info" type="button">Info speichern</button>
+        <span class="hint" id="info-saved"></span>
       </div>
     </section>
   </div>

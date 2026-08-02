@@ -43,6 +43,11 @@ idle_percent = 0
 # Statusdatei fuer die Anzeige-Seite (Temperatur/Stufe im Kopf des Boards).
 status_file = /opt/lanparty/data/fan-status.json
 
+# Schalter "Luefter dauerhaft 100 %" aus der Weboberflaeche. Der Webserver
+# schreibt diese Datei, der Dienst liest sie in jedem Durchlauf. Leer = neben
+# der Statusdatei suchen.
+override_file = /opt/lanparty/data/fan-override.json
+
 # Thermal-Zone: auto sucht die CPU-Zone.
 thermal_zone = auto
 

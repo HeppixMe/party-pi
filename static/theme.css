@@ -1,0 +1,279 @@
+/*
+ * Gemeinsames Cyberpunk-Theme fuer alle Seiten.
+ *
+ * Leitfarbe ist Orange; Cyan kommt ausschliesslich als Farbe von Team 2 vor,
+ * damit die beiden Zahlenspalten der SOS-Tabelle auch aus mehreren Metern
+ * auseinanderzuhalten sind.
+ *
+ * Alle Bewegungen haengen an html[data-fx="full"] - der Admin schaltet das
+ * fuer alle Geraete gleichzeitig um. Bewegt wird ausschliesslich ueber
+ * transform und opacity: das erledigt der Compositor, ohne dass der Pi
+ * Flaechen neu zeichnet. box-shadow, filter oder background-position zu
+ * animieren waere genau der teure Weg und wird bewusst vermieden.
+ */
+
+:root {
+  --bg: #0a0705;
+  --bg-panel: #14100c;
+  --bg-row: #1d1610;
+  --line: #4a2a12;
+  --line-hot: #ff7a18;
+  --text: #ffe8d2;
+  --muted: #a87b58;
+
+  --accent: #ff7a18;
+  --accent-2: #ffb020;
+  --team-a: #ff7a18;
+  --team-b: #00e5ff;
+
+  --ok: #4dff9f;
+  --bad: #ff2e5b;
+  --gold: #ffb020;
+  --silver: #d8d8e8;
+  --bronze: #c4703a;
+
+  --glow: 0 0 0.35em rgba(255, 122, 24, 0.55);
+  --glow-b: 0 0 0.35em rgba(0, 229, 255, 0.5);
+
+  --mono: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono",
+          ui-monospace, "Courier New", monospace;
+
+  /* Abgeschraegte Ecke, der typische HUD-Schnitt. */
+  --bevel: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+body { min-height: 100vh; }
+
+/* --- Hintergrund: Gitterraster ------------------------------------------ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -50% 0 -50% 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(255, 122, 24, 0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 122, 24, 0.09) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+html[data-fx="full"] body::before {
+  animation: grid-drift 24s linear infinite;
+}
+
+@keyframes grid-drift {
+  from { transform: translateY(0); }
+  to   { transform: translateY(48px); }
+}
+
+/* --- Hintergrund: Scanlines und wandernder Balken ------------------------ */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0.22) 0px,
+      rgba(0, 0, 0, 0.22) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+}
+
+/* Der wandernde Balken liegt auf einer eigenen Ebene, damit nur er sich
+   bewegt und nicht die ganzen Scanlines neu gezeichnet werden. */
+.scanbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28vh;
+  pointer-events: none;
+  z-index: 91;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(255, 176, 32, 0.05) 45%,
+    rgba(255, 176, 32, 0.09) 50%,
+    transparent
+  );
+}
+
+html[data-fx="full"] .scanbar {
+  opacity: 1;
+  animation: scanbar 7s linear infinite;
+}
+
+@keyframes scanbar {
+  from { transform: translate3d(0, -30vh, 0); }
+  to   { transform: translate3d(0, 100vh, 0); }
+}
+
+/* Inhalte liegen ueber dem Gitter. */
+body > *:not(.scanbar) { position: relative; z-index: 1; }
+
+/* --- Ueberschriften ------------------------------------------------------ */
+h1, h2, h3 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: var(--glow);
+}
+
+html[data-fx="full"] h1,
+html[data-fx="full"] .flicker {
+  animation: flicker 6s steps(1, end) infinite;
+}
+
+/* Unregelmaessig genug, dass es nicht wie ein Metronom wirkt. */
+@keyframes flicker {
+  0%, 41%, 43%, 62%, 64%, 89%, 100% { opacity: 1; }
+  42%, 63%, 90%                     { opacity: 0.55; }
+}
+
+/* --- Flaechen ------------------------------------------------------------ */
+.panel {
+  position: relative;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  box-shadow:
+    inset 0 0 40px rgba(255, 122, 24, 0.05),
+    0 0 24px rgba(255, 122, 24, 0.08);
+  clip-path: polygon(
+    var(--bevel) 0, 100% 0,
+    100% calc(100% - var(--bevel)), calc(100% - var(--bevel)) 100%,
+    0 100%, 0 var(--bevel)
+  );
+}
+
+/* Kurze Eckmarkierungen - macht aus dem Kasten ein HUD-Element. */
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  opacity: 0.8;
+}
+
+.panel::before {
+  top: 0; right: 0;
+  border-left: none;
+  border-bottom: none;
+}
+
+.panel::after {
+  bottom: 0; left: 0;
+  border-right: none;
+  border-top: none;
+}
+
+/* --- Bedienelemente ------------------------------------------------------ */
+button, input, select, textarea {
+  font: inherit;
+  font-family: var(--mono);
+  color: var(--text);
+  background: var(--bg-row);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.6rem 0.8rem;
+  min-height: 44px;
+}
+
+button {
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: background-color 0.12s linear, border-color 0.12s linear, color 0.12s linear;
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #180a00;
+  font-weight: 700;
+}
+button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); color: #180a00; }
+
+button.ghost { background: transparent; color: var(--muted); }
+button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+button.running { background: var(--ok); border-color: var(--ok); color: #04180d; font-weight: 700; }
+
+input, select, textarea { width: 100%; }
+input:focus, select:focus, textarea:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+::placeholder { color: var(--muted); opacity: 0.7; }
+
+/* --- Glitch beim Levelwechsel ------------------------------------------- */
+/* Wird per Klasse fuer ~700 ms gesetzt; ausserhalb des vollen Programms
+   passiert nichts. */
+html[data-fx="full"] .glitch {
+  animation: glitch-shift 0.7s steps(2, end) 1;
+}
+
+@keyframes glitch-shift {
+  0%   { transform: translate3d(0, 0, 0); opacity: 1; }
+  12%  { transform: translate3d(-4px, 1px, 0); opacity: 0.75; }
+  24%  { transform: translate3d(5px, -2px, 0); opacity: 1; }
+  38%  { transform: translate3d(-3px, 0, 0); opacity: 0.6; }
+  52%  { transform: translate3d(2px, 2px, 0); opacity: 1; }
+  70%  { transform: translate3d(-1px, -1px, 0); opacity: 0.85; }
+  100% { transform: translate3d(0, 0, 0); opacity: 1; }
+}
+
+/* --- Gemeinsame Kleinteile ---------------------------------------------- */
+.badge {
+  display: inline-block;
+  padding: 0.25em 0.8em;
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+}
+
+.badge.online { color: var(--ok); border-color: var(--ok); }
+.badge.offline { color: var(--bad); border-color: var(--bad); }
+
+.team-a { color: var(--team-a); }
+.team-b { color: var(--team-b); }
+
+a { color: var(--accent); }
+
+[hidden] { display: none !important; }
+
+/* Wer Bewegung ausdruecklich abbestellt hat, bekommt keine - unabhaengig
+   davon, was der Admin eingestellt hat. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

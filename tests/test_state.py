@@ -185,25 +185,25 @@ class SmashTest(unittest.TestCase):
 
     def test_sorted_by_wins_then_rate_then_losses(self):
         state = self.make(("Ana", 3, 5), ("Ben", 5, 0), ("Cem", 3, 1))
-        order = [p["name"] for p in lb.sort_players(state["smash"]["players"])]
+        order = [p["name"] for p in lb.sort_players(state["players"])]
         self.assertEqual(order, ["Ben", "Cem", "Ana"])
 
     def test_match_updates_both_players(self):
         state = self.make(("Ana", 0, 0), ("Ben", 0, 0))
-        ana, ben = state["smash"]["players"]
+        ana, ben = state["players"]
         lb.op_match(state, ana["id"], ben["id"])
         self.assertEqual((ana["wins"], ana["losses"]), (1, 0))
         self.assertEqual((ben["wins"], ben["losses"]), (0, 1))
 
     def test_match_against_yourself_is_rejected(self):
         state = self.make(("Ana", 0, 0))
-        ana = state["smash"]["players"][0]
+        ana = state["players"][0]
         with self.assertRaises(ValueError):
             lb.op_match(state, ana["id"], ana["id"])
 
     def test_score_never_goes_below_zero(self):
         state = self.make(("Ana", 1, 0))
-        ana = state["smash"]["players"][0]
+        ana = state["players"][0]
         lb.op_player_score(state, ana["id"], "wins", -5)
         self.assertEqual(ana["wins"], 0)
 
@@ -241,12 +241,12 @@ class PersistenceTest(unittest.TestCase):
         level = state["sos"]["levels"][0]
         self.assertEqual(set(level["timers"]), {"a", "b"})
         self.assertEqual(level["timers"]["a"]["elapsedMs"], 0)
-        self.assertEqual(state["smash"]["players"][0]["wins"], 0)
-        self.assertTrue(state["smash"]["players"][0]["id"])
+        self.assertEqual(state["players"][0]["wins"], 0)
+        self.assertTrue(state["players"][0]["id"])
 
     def test_migration_survives_complete_garbage(self):
         self.assertEqual(lb.migrate_state("nein danke")["sos"]["levels"], [])
-        self.assertEqual(lb.migrate_state({"sos": 42, "smash": None})["smash"]["players"], [])
+        self.assertEqual(lb.migrate_state({"sos": 42, "players": None})["players"], [])
 
 
 class BroadcastTest(unittest.TestCase):
@@ -270,7 +270,7 @@ class BroadcastTest(unittest.TestCase):
             self.store.mutate(lambda s, i=index: lb.op_add_player(s, f"Spieler {i}"))
 
         newest = json.loads(list(client.queue)[-1])
-        self.assertEqual(len(newest["state"]["smash"]["players"]), client.maxsize + 10)
+        self.assertEqual(len(newest["state"]["players"]), client.maxsize + 10)
         self.assertLessEqual(client.qsize(), client.maxsize)
 
     def test_unsubscribed_client_gets_nothing_more(self):
@@ -278,6 +278,197 @@ class BroadcastTest(unittest.TestCase):
         self.store.unsubscribe(client)
         self.store.mutate(lambda s: lb.op_start_level(s, "Level 1", True, 0))
         self.assertTrue(client.empty())
+
+
+class MigrationTest(unittest.TestCase):
+    """Ein Spielstand aus der Zeit vor der Spieler-Anmeldung darf nichts verlieren."""
+
+    def test_players_move_from_smash_to_the_top_level(self):
+        old = {
+            "version": 1,
+            "sos": {"teams": [{"id": "a", "name": "Die Roten"}], "levels": []},
+            "smash": {"players": [
+                {"id": "p1", "name": "Mia", "wins": 7, "losses": 2},
+                {"id": "p2", "name": "Tom", "wins": 1, "losses": 5},
+            ]},
+        }
+        state = lb.migrate_state(old)
+        players = {p["name"]: p for p in state["players"]}
+        self.assertEqual(len(players), 2)
+        self.assertEqual((players["Mia"]["wins"], players["Mia"]["losses"]), (7, 2))
+        self.assertEqual(players["Mia"]["id"], "p1")
+        # Team-Zuordnung gab es damals nicht - die bleibt zunaechst offen.
+        self.assertIsNone(players["Mia"]["teamId"])
+        self.assertEqual(state["sos"]["teams"][0]["name"], "Die Roten")
+        self.assertEqual(state["version"], lb.STATE_VERSION)
+
+    def test_new_format_is_read_as_is(self):
+        state = lb.migrate_state({
+            "players": [{"id": "p1", "name": "Mia", "teamId": "b", "wins": 3, "losses": 0}],
+        })
+        self.assertEqual(state["players"][0]["teamId"], "b")
+        self.assertEqual(state["players"][0]["wins"], 3)
+
+    def test_unknown_team_id_is_dropped(self):
+        state = lb.migrate_state({"players": [{"name": "Mia", "teamId": "z"}]})
+        self.assertIsNone(state["players"][0]["teamId"])
+
+    def test_switches_and_info_survive(self):
+        state = lb.migrate_state({
+            "info": {"text": "WLAN: geheim"},
+            "display": {"fx": "plain"},
+            "fan": {"force": True},
+            "screens": [{"id": "tv", "name": "Fernseher", "view": "/qr", "seenAt": 123}],
+        })
+        self.assertEqual(state["info"]["text"], "WLAN: geheim")
+        self.assertEqual(state["display"]["fx"], "plain")
+        self.assertTrue(state["fan"]["force"])
+        self.assertEqual(state["screens"][0]["view"], "/qr")
+
+    def test_nonsense_values_fall_back_instead_of_crashing(self):
+        state = lb.migrate_state({
+            "display": {"fx": "disco"},
+            "screens": [{"id": "tv", "view": "/etc/passwd"}, "quatsch", {"id": "///"}],
+            "fan": "kaputt",
+        })
+        self.assertEqual(state["display"]["fx"], "full")
+        self.assertEqual(len(state["screens"]), 1)
+        self.assertEqual(state["screens"][0]["view"], "/")
+        self.assertFalse(state["fan"]["force"])
+
+
+class JoinLogicTest(unittest.TestCase):
+    def test_join_creates_a_player_with_team(self):
+        state = lb.default_state()
+        player = lb.op_join(state, None, "Mia", "a")
+        self.assertEqual(player["name"], "Mia")
+        self.assertEqual(player["teamId"], "a")
+        self.assertEqual(len(state["players"]), 1)
+
+    def test_join_with_known_id_updates_instead_of_adding(self):
+        state = lb.default_state()
+        first = lb.op_join(state, None, "Mia", "a")
+        again = lb.op_join(state, first["id"], "Mia B.", "b")
+        self.assertEqual(again["id"], first["id"])
+        self.assertEqual(len(state["players"]), 1)
+        self.assertEqual(state["players"][0]["name"], "Mia B.")
+        self.assertEqual(state["players"][0]["teamId"], "b")
+
+    def test_join_keeps_the_score_when_changing_team(self):
+        state = lb.default_state()
+        player = lb.op_join(state, None, "Mia", "a")
+        player["wins"] = 4
+        lb.op_join(state, player["id"], "Mia", "b")
+        self.assertEqual(state["players"][0]["wins"], 4)
+
+    def test_unknown_cookie_id_creates_a_fresh_player(self):
+        state = lb.default_state()
+        lb.op_join(state, "gibtsnicht", "Mia", "a")
+        self.assertEqual(len(state["players"]), 1)
+
+    def test_name_and_team_are_required(self):
+        state = lb.default_state()
+        with self.assertRaises(ValueError):
+            lb.op_join(state, None, "   ", "a")
+        with self.assertRaises(ValueError):
+            lb.op_join(state, None, "Mia", None)
+
+    def test_player_limit_is_enforced(self):
+        state = lb.default_state()
+        for index in range(lb.MAX_PLAYERS):
+            lb.op_add_player(state, f"Spieler {index}")
+        with self.assertRaises(ValueError):
+            lb.op_join(state, None, "Zu viel", "a")
+
+
+class ResetScopeTest(unittest.TestCase):
+    def make(self):
+        state = lb.default_state()
+        lb.op_start_level(state, "Level 1", True, 0)
+        player = lb.op_join(state, None, "Mia", "a")
+        player["wins"] = 3
+        return state
+
+    def test_smash_clears_scores_but_keeps_the_squad(self):
+        state = self.make()
+        lb.op_reset(state, "smash")
+        self.assertEqual(len(state["players"]), 1)
+        self.assertEqual(state["players"][0]["wins"], 0)
+        self.assertEqual(state["players"][0]["teamId"], "a")
+        self.assertEqual(len(state["sos"]["levels"]), 1)
+
+    def test_players_scope_removes_everyone(self):
+        state = self.make()
+        lb.op_reset(state, "players")
+        self.assertEqual(state["players"], [])
+        self.assertEqual(len(state["sos"]["levels"]), 1)
+
+    def test_all_clears_levels_and_players(self):
+        state = self.make()
+        lb.op_reset(state, "all")
+        self.assertEqual(state["sos"]["levels"], [])
+        self.assertEqual(state["players"], [])
+
+    def test_screens_and_info_are_never_cleared(self):
+        state = self.make()
+        lb.op_touch_screen(state, "tv", 1000)
+        lb.op_set_info(state, "WLAN: geheim")
+        lb.op_reset(state, "all")
+        self.assertEqual(len(state["screens"]), 1)
+        self.assertEqual(state["info"]["text"], "WLAN: geheim")
+
+
+class ScreenLogicTest(unittest.TestCase):
+    def test_touch_registers_then_only_refreshes(self):
+        state = lb.default_state()
+        first = lb.op_touch_screen(state, "tv", 1000)
+        second = lb.op_touch_screen(state, "tv", 5000)
+        self.assertIs(first, second)
+        self.assertEqual(len(state["screens"]), 1)
+        self.assertEqual(second["seenAt"], 5000)
+
+    def test_assign_only_accepts_known_views(self):
+        state = lb.default_state()
+        lb.op_touch_screen(state, "tv", 0)
+        lb.op_assign_screen(state, "tv", "/qr")
+        self.assertEqual(state["screens"][0]["view"], "/qr")
+        with self.assertRaises(ValueError):
+            lb.op_assign_screen(state, "tv", "/../etc/passwd")
+
+    def test_screen_limit(self):
+        state = lb.default_state()
+        for index in range(lb.MAX_SCREENS):
+            lb.op_touch_screen(state, f"s{index}", 0)
+        with self.assertRaises(ValueError):
+            lb.op_touch_screen(state, "einer-zuviel", 0)
+
+    def test_name_cleaning(self):
+        self.assertEqual(lb.clamp_screen_id("Wohn Zimmer"), "wohnzimmer")
+        self.assertEqual(lb.clamp_screen_id("../etc/passwd"), "etcpasswd")
+        self.assertEqual(lb.clamp_screen_id("tv-2_a"), "tv-2_a")
+        self.assertEqual(lb.clamp_screen_id("..."), "")
+        self.assertEqual(lb.clamp_screen_id(None), "")
+
+
+class SwitchLogicTest(unittest.TestCase):
+    def test_fx_only_accepts_the_two_modes(self):
+        state = lb.default_state()
+        lb.op_set_fx(state, "plain")
+        self.assertEqual(state["display"]["fx"], "plain")
+        with self.assertRaises(ValueError):
+            lb.op_set_fx(state, "disco")
+
+    def test_fan_force_is_a_boolean(self):
+        state = lb.default_state()
+        self.assertTrue(lb.op_set_fan_force(state, True))
+        self.assertFalse(lb.op_set_fan_force(state, 0))
+
+    def test_info_is_capped(self):
+        state = lb.default_state()
+        lb.op_set_info(state, "x" * 9000)
+        self.assertEqual(len(state["info"]["text"]), 4000)
+        lb.op_set_info(state, None)
+        self.assertEqual(state["info"]["text"], "")
 
 
 class AuthTest(unittest.TestCase):
@@ -304,6 +495,16 @@ class AuthTest(unittest.TestCase):
             self.auth.config["secret"].encode(), expired.encode(), lb.hashlib.sha256
         ).hexdigest()
         self.assertFalse(self.auth.check_token(f"{expired}.{signature}"))
+
+    def test_value_token_carries_the_player_id(self):
+        token = self.auth.make_value_token("abc123", 3600)
+        self.assertEqual(self.auth.check_value_token(token), "abc123")
+        self.assertIsNone(self.auth.check_value_token(token + "x"))
+        self.assertIsNone(self.auth.check_value_token("quatsch"))
+        self.assertIsNone(self.auth.check_value_token(None))
+
+    def test_expired_value_token_is_rejected(self):
+        self.assertIsNone(self.auth.check_value_token(self.auth.make_value_token("abc", -1)))
 
     def test_config_file_is_only_readable_by_owner(self):
         self.auth.set_password("geheim")
@@ -431,7 +632,7 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(status, 200)
 
         _status, body, _ = self.request("GET", "/api/state")
-        players = {p["name"]: p for p in body["state"]["smash"]["players"]}
+        players = {p["name"]: p for p in body["state"]["players"]}
         self.assertEqual((players["Ana"]["wins"], players["Ana"]["losses"]), (1, 0))
         self.assertEqual((players["Ben"]["wins"], players["Ben"]["losses"]), (0, 1))
 

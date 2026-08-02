@@ -241,6 +241,127 @@ class StatusFileTest(unittest.TestCase):
             self.assertIsNone(json.load(fh)["tempC"])
 
 
+class ForceMaxTest(unittest.TestCase):
+    """Der Volllast-Schalter aus der Weboberflaeche."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.override = os.path.join(self.dir, "fan-override.json")
+        self.status = os.path.join(self.dir, "fan-status.json")
+
+    def controller(self):
+        controller = make_controller(min_hold=0, status_file=self.status,
+                                     override_file=self.override)
+        controller.backend = RecordingBackend()
+        return controller
+
+    def set_override(self, force):
+        with open(self.override, "w", encoding="utf-8") as fh:
+            json.dump({"force": force}, fh)
+
+    def test_missing_file_means_off(self):
+        self.assertFalse(self.controller().read_override())
+
+    def test_broken_file_means_off(self):
+        with open(self.override, "w", encoding="utf-8") as fh:
+            fh.write("{kaputt")
+        self.assertFalse(self.controller().read_override())
+
+    def test_override_pushes_the_fan_to_full(self):
+        controller = self.controller()
+        controller.step(52, now=0)                 # nach Kurve: 30 %
+        self.assertEqual(controller.percent, 30)
+
+        self.set_override(True)
+        controller.apply_override(controller.read_override())
+        self.assertTrue(controller.forced)
+        self.assertEqual(controller.backend.calls[-1], 100)
+        # Auch eine niedrige Temperatur aendert daran nichts mehr.
+        self.assertEqual(controller.step(20, now=10), 100)
+
+    def test_switching_back_returns_to_the_curve(self):
+        controller = self.controller()
+        self.set_override(True)
+        controller.apply_override(controller.read_override())
+        self.set_override(False)
+        controller.apply_override(controller.read_override())
+
+        self.assertFalse(controller.forced)
+        # Die Regelung faengt neu an und folgt wieder der Temperatur.
+        self.assertEqual(controller.step(72, now=100), 75)
+
+    def test_no_repeated_switching_without_change(self):
+        controller = self.controller()
+        self.set_override(True)
+        controller.apply_override(True)
+        before = len(controller.backend.calls)
+        controller.apply_override(True)
+        controller.apply_override(True)
+        self.assertEqual(len(controller.backend.calls), before)
+
+    def test_status_file_reports_the_switch(self):
+        controller = self.controller()
+        self.set_override(True)
+        controller.apply_override(True)
+        controller.write_status(48.0)
+        with open(self.status, "r", encoding="utf-8") as fh:
+            status = json.load(fh)
+        self.assertTrue(status["force"])
+        self.assertTrue(status["controllable"])
+
+    def test_monitor_backend_reports_that_it_cannot_help(self):
+        controller = self.controller()
+        controller.backend = fc.MonitorBackend()
+        controller.apply_override(True)
+        controller.write_status(48.0)
+        with open(self.status, "r", encoding="utf-8") as fh:
+            self.assertFalse(json.load(fh)["controllable"])
+
+    def test_override_file_defaults_next_to_the_status_file(self):
+        controller = make_controller(status_file=self.status)
+        self.assertEqual(controller.override_file, self.override)
+
+
+class TripPointForceTest(unittest.TestCase):
+    """Beim kernelgeregelten Luefter heisst Volllast: Schaltpunkte nach unten."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.zone = os.path.join(self.dir, "thermal_zone0")
+        os.makedirs(self.zone)
+        for index, temp in enumerate((50000, 60000, 67500, 75000)):
+            self._write(f"trip_point_{index}_type", "active")
+            self._write(f"trip_point_{index}_temp", str(temp))
+            self._write(f"trip_point_{index}_hyst", "5000")
+
+    def _write(self, name, value):
+        with open(os.path.join(self.zone, name), "w", encoding="utf-8") as fh:
+            fh.write(value)
+
+    def _temps(self):
+        values = []
+        for index in range(4):
+            with open(os.path.join(self.zone, f"trip_point_{index}_temp"), encoding="utf-8") as fh:
+                values.append(int(fh.read()))
+        return values
+
+    def test_force_lowers_all_trip_points(self):
+        backend = fc.TripPointBackend(self.zone, None)
+        steps = [(50.0, 30), (60.0, 50), (70.0, 75), (75.0, 100)]
+        backend.force_max(True, steps, 4)
+        # Alle Schaltpunkte liegen jetzt so tief, dass die hoechste Stufe greift.
+        self.assertTrue(all(value <= 5000 for value in self._temps()), self._temps())
+
+    def test_releasing_restores_the_configured_curve(self):
+        backend = fc.TripPointBackend(self.zone, None)
+        steps = [(45.0, 30), (55.0, 50), (62.0, 75), (68.0, 100)]
+        backend.force_max(True, steps, 4)
+        backend.force_max(False, steps, 4)
+        self.assertEqual(self._temps(), [45000, 55000, 62000, 68000])
+
+
 class BackendChoiceTest(unittest.TestCase):
     def test_monitor_can_be_forced(self):
         config = fc.load_config(None)
