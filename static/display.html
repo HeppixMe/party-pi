@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LAN-Party Leaderboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/display.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">LAN-Party Leaderboard</h1>
+    <div class="badges">
+      <span class="badge" id="fan-badge" hidden></span>
+      <span class="badge badge-live" id="conn-badge">verbinde…</span>
+    </div>
+  </header>
+
+  <main class="board">
+    <section class="panel panel-sos">
+      <div class="panel-head">
+        <h2>S.O.S.</h2>
+        <p class="lead" id="sos-lead">Noch kein Level gestartet</p>
+      </div>
+
+      <div class="panel-body">
+      <table class="grid" id="sos-table">
+        <thead>
+          <tr>
+            <th class="col-level">Level</th>
+            <th class="col-team" id="head-a">Team 1</th>
+            <th class="col-team" id="head-b">Team 2</th>
+          </tr>
+        </thead>
+        <tbody id="sos-body"></tbody>
+        <tfoot>
+          <tr class="row-total">
+            <th>Gesamt</th>
+            <td id="total-a">00:00.0</td>
+            <td id="total-b">00:00.0</td>
+          </tr>
+          <tr class="row-wins">
+            <th>Level gewonnen</th>
+            <td id="wins-a">0</td>
+            <td id="wins-b">0</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <p class="empty" id="sos-empty">Wartet auf das erste Level…</p>
+      </div>
+    </section>
+
+    <section class="panel panel-smash">
+      <div class="panel-head">
+        <h2>Smash Bros</h2>
+        <p class="lead">Meiste Siege</p>
+      </div>
+      <div class="panel-body">
+        <ol class="ranking" id="smash-list"></ol>
+        <p class="empty" id="smash-empty">Noch keine Spieler eingetragen…</p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/display.js"></script>
+</body>
+</html>

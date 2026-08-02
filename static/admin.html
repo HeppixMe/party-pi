@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Steuerung – LAN-Party Leaderboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Steuerung</h1>
+    <div class="topbar-actions">
+      <span class="status" id="conn">verbinde…</span>
+      <a href="/" target="_blank"><button class="ghost small" type="button">Anzeige</button></a>
+      <button class="ghost small" id="logout" type="button">Abmelden</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ------------------------------------------------------------- SOS -->
+    <section class="panel">
+      <h2>S.O.S.</h2>
+
+      <div class="two-col">
+        <div class="field">
+          <label for="name-a">Team 1</label>
+          <input id="name-a" type="text" maxlength="60">
+        </div>
+        <div class="field">
+          <label for="name-b">Team 2</label>
+          <input id="name-b" type="text" maxlength="60">
+        </div>
+      </div>
+      <div class="row">
+        <button class="ghost" id="save-teams" type="button">Teamnamen speichern</button>
+      </div>
+
+      <h3>Aktuelles Level</h3>
+      <div class="current" id="current">
+        <div class="current-name" id="current-name">– kein Level gestartet –</div>
+        <div class="two-col">
+          <div class="team-card a">
+            <span class="team-label" id="label-a">Team 1</span>
+            <div class="clock" id="clock-a">00:00.0</div>
+            <button class="big" data-team="a" data-role="toggle" type="button">Start</button>
+            <button data-team="a" data-role="finish" type="button">Fertig</button>
+            <div class="state-note" id="note-a"></div>
+          </div>
+          <div class="team-card b">
+            <span class="team-label" id="label-b">Team 2</span>
+            <div class="clock" id="clock-b">00:00.0</div>
+            <button class="big" data-team="b" data-role="toggle" type="button">Start</button>
+            <button data-team="b" data-role="finish" type="button">Fertig</button>
+            <div class="state-note" id="note-b"></div>
+          </div>
+        </div>
+        <p class="hint">
+          „Fertig“ hält die Uhr an und wertet das Level für dieses Team –
+          das andere Team läuft weiter.
+        </p>
+      </div>
+
+      <div class="row">
+        <input class="grow" id="level-name" type="text" placeholder="Name des nächsten Levels">
+        <button class="primary big" id="start-level" type="button">Neues Level starten</button>
+      </div>
+      <p class="hint">
+        Beim Start friert alles Bisherige ein und beide Uhren beginnen neu bei 0.
+      </p>
+
+      <h3>Alle Level <span class="hint" id="level-count"></span></h3>
+      <div class="list" id="levels"></div>
+      <p class="empty" id="levels-empty">Noch keine Level.</p>
+    </section>
+
+    <!-- ----------------------------------------------------------- Smash -->
+    <section class="panel">
+      <h2>Smash Bros</h2>
+
+      <div class="row">
+        <input class="grow" id="player-name" type="text" placeholder="Spielername" maxlength="60">
+        <button class="primary" id="add-player" type="button">Hinzufügen</button>
+      </div>
+
+      <h3>Match eintragen</h3>
+      <div class="row">
+        <select class="grow" id="winner"></select>
+        <span class="hint">schlägt</span>
+        <select class="grow" id="loser"></select>
+        <button class="primary" id="add-match" type="button">Eintragen</button>
+      </div>
+      <p class="hint">Setzt in einem Schritt +1 Sieg und +1 Niederlage.</p>
+
+      <h3>Spieler</h3>
+      <div class="list" id="players"></div>
+      <p class="empty" id="players-empty">Noch keine Spieler.</p>
+
+      <h3>Zurücksetzen</h3>
+      <div class="row">
+        <button class="danger" data-reset="sos" type="button">SOS leeren</button>
+        <button class="danger" data-reset="smash" type="button">Smash leeren</button>
+        <button class="danger" data-reset="all" type="button">Alles leeren</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" hidden></div>
+  <script type="module" src="/static/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Anmelden – LAN-Party Leaderboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <div class="panel login">
+    <h1>Steuerung</h1>
+    <p>Passwort eingeben, um Level und Ergebnisse zu ändern.</p>
+    <form id="form">
+      <div class="field">
+        <label for="password">Admin-Passwort</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" autofocus>
+      </div>
+      <button class="primary big" style="width: 100%" type="submit">Anmelden</button>
+    </form>
+    <p class="hint" id="error" hidden></p>
+    <p class="hint"><a href="/" style="color: var(--muted)">→ zur Anzeige</a></p>
+  </div>
+
+  <script type="module">
+    import { api } from '/static/common.js';
+
+    const form = document.getElementById('form');
+    const error = document.getElementById('error');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      error.hidden = true;
+      try {
+        await api('/api/login', { password: document.getElementById('password').value });
+        window.location.href = '/admin';
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+        document.getElementById('password').select();
+      }
+    });
+  </script>
+</body>
+</html>

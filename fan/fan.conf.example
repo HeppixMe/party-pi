@@ -1,0 +1,60 @@
+# Luefterkurve fuer den Raspberry Pi (fan/fan_control.py).
+#
+# Das Installationsskript legt diese Datei als /etc/lanparty-fan.conf an.
+# Nach jeder Aenderung:  sudo systemctl restart lanparty-fan
+# Kontrolle:             journalctl -u lanparty-fan -f
+# Trockenlauf:           sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
+
+[fan]
+
+# Verfahren: auto | trip-points | pwm | gpio | monitor
+#
+#   auto         erkennt einen vom Kernel geregelten Luefter (Pi 5 mit
+#                offiziellem Active Cooler) von selbst; findet es keinen und
+#                ist unten kein gpio_pin gesetzt, wird nur beobachtet
+#   trip-points  Pi 5 / offizieller Kuehler - die Kurve wird ueber die
+#                Schaltpunkte der Thermal-Zone gesetzt, der Kernel regelt
+#   pwm          PWM-Luefter an GPIO12/13/18/19 ueber /sys/class/pwm
+#                (setzt 'dtoverlay=pwm,pin=18,func=2' o.ae. in
+#                /boot/firmware/config.txt voraus)
+#   gpio         Luefter ueber Transistor an einem GPIO, nur an/aus
+#   monitor      nichts schalten, nur Temperatur protokollieren
+backend = auto
+
+# Kurve: Temperatur in Grad : Leistung in Prozent, aufsteigend.
+# Beim an/aus-Verfahren bedeutet jeder Wert ueber 0 schlicht "Luefter an",
+# der erste Punkt ist dann die Einschalttemperatur.
+curve = 50:30, 60:50, 70:75, 75:100
+
+# Um so viele Grad muss die Temperatur unter die Schwelle fallen, bevor
+# wieder heruntergeschaltet wird (verhindert dauerndes Auf und Ab).
+hysteresis = 4
+
+# Messabstand in Sekunden.
+interval = 2
+
+# Fruehestens nach so vielen Sekunden darf wieder heruntergeschaltet werden.
+# Hochgeschaltet wird immer sofort.
+min_hold = 15
+
+# Leistung unterhalb des ersten Kurvenpunkts.
+idle_percent = 0
+
+# Statusdatei fuer die Anzeige-Seite (Temperatur/Stufe im Kopf des Boards).
+status_file = /opt/lanparty/data/fan-status.json
+
+# Thermal-Zone: auto sucht die CPU-Zone.
+thermal_zone = auto
+
+# --- nur fuer backend = gpio -------------------------------------------------
+# BCM-Nummer des Pins, an dem der Transistor haengt. Ohne diesen Wert kann
+# auch die Automatik keinen GPIO-Luefter finden.
+gpio_pin =
+gpio_active_low = false
+
+# --- nur fuer backend = pwm --------------------------------------------------
+pwm_chip = 0
+pwm_channel = 0
+# 40000 ns = 25 kHz, der uebliche Wert fuer 4-polige Luefter.
+pwm_period_ns = 40000
+pwm_invert = false

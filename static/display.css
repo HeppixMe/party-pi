@@ -1,0 +1,297 @@
+/* Anzeige-Seite: dunkel, sehr kontrastreich, aus mehreren Metern lesbar. */
+
+:root {
+  --bg: #0b0e17;
+  --bg-panel: #141a29;
+  --bg-row: #1b2336;
+  --line: #2b3550;
+  --text: #eef2ff;
+  --muted: #8d9ac0;
+  --team-a: #ff6b4a;
+  --team-b: #34c6ff;
+  --gold: #ffcc4d;
+  --silver: #cfd8f0;
+  --bronze: #e08a4a;
+  --ok: #46d17f;
+  --bad: #ff5470;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(0.6rem, 1.4vh, 1.4rem) clamp(0.8rem, 1.6vw, 2rem);
+  gap: clamp(0.5rem, 1.2vh, 1.1rem);
+}
+
+/* --- Kopfzeile ---------------------------------------------------------- */
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 0 0 auto;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(1.4rem, 3.4vh, 3rem);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.badges { display: flex; gap: 0.6rem; align-items: center; }
+
+.badge {
+  font-size: clamp(0.7rem, 1.6vh, 1.1rem);
+  padding: 0.25em 0.8em;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.badge-live.online { color: var(--ok); border-color: var(--ok); }
+.badge-live.offline { color: var(--bad); border-color: var(--bad); }
+
+/* --- Aufteilung --------------------------------------------------------- */
+.board {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.45fr 1fr;
+  gap: clamp(0.6rem, 1.4vw, 1.6rem);
+}
+
+@media (max-aspect-ratio: 1/1) {
+  .board { grid-template-columns: 1fr; grid-template-rows: 1.3fr 1fr; }
+}
+
+.panel {
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: clamp(8px, 1.2vh, 18px);
+  padding: clamp(0.5rem, 1.4vh, 1.3rem);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex: 0 0 auto;
+  margin-bottom: clamp(0.3rem, 0.9vh, 0.9rem);
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.8vh, 2.2rem);
+  letter-spacing: 0.04em;
+}
+
+.lead {
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(0.75rem, 1.8vh, 1.3rem);
+  text-align: right;
+}
+
+.lead strong { color: var(--text); }
+.lead .team-a { color: var(--team-a); }
+.lead .team-b { color: var(--team-b); }
+
+.empty {
+  margin: auto;
+  color: var(--muted);
+  font-size: clamp(0.9rem, 2.2vh, 1.6rem);
+}
+
+/* Inhalt mittig in der freien Hoehe - mit wenigen Zeilen wirkt das Board
+   sonst wie oben angeklebt, und aus mehreren Metern zaehlt jede Zeile. */
+.panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* --- SOS-Tabelle -------------------------------------------------------- */
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid th, .grid td {
+  padding: clamp(0.2rem, 0.9vh, 0.75rem) clamp(0.3rem, 0.7vw, 0.9rem);
+  text-align: right;
+}
+
+.grid thead th {
+  font-size: clamp(0.8rem, 2vh, 1.6rem);
+  color: var(--muted);
+  border-bottom: 2px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid thead th.col-level { text-align: left; }
+.grid thead th#head-a { color: var(--team-a); }
+.grid thead th#head-b { color: var(--team-b); }
+
+.col-level { width: 34%; }
+
+.grid tbody td, .grid tbody th {
+  font-size: clamp(1rem, 3.4vh, 3rem);
+  font-weight: 600;
+}
+
+.grid tbody th {
+  text-align: left;
+  font-weight: 500;
+  font-size: clamp(0.85rem, 2.4vh, 2rem);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid tbody tr { border-bottom: 1px solid var(--line); }
+
+.grid tbody tr.active {
+  background: var(--bg-row);
+}
+
+.grid tbody tr.active th { color: var(--text); }
+
+.grid tbody tr.active th::before {
+  content: "▶ ";
+  color: var(--ok);
+}
+
+td.running { color: var(--text); }
+td.done { color: var(--muted); }
+td.done.best { color: var(--ok); }
+td.pending { color: var(--muted); opacity: 0.55; }
+
+/* Punkt, der zeigt, dass diese Uhr gerade laeuft. */
+td.running::after {
+  content: "";
+  display: inline-block;
+  width: 0.32em;
+  height: 0.32em;
+  margin-left: 0.35em;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: middle;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse { 50% { opacity: 0.15; } }
+
+.grid tfoot th, .grid tfoot td {
+  border-top: 2px solid var(--line);
+  font-size: clamp(0.95rem, 2.6vh, 2.2rem);
+}
+
+.grid tfoot .row-total td { font-weight: 700; }
+.grid tfoot .row-wins th, .grid tfoot .row-wins td {
+  font-size: clamp(0.8rem, 1.9vh, 1.5rem);
+  color: var(--muted);
+  border-top: none;
+  padding-top: 0;
+}
+
+.grid tfoot th { text-align: left; color: var(--muted); }
+.grid tfoot td.leader { color: var(--gold); }
+
+/* Muss .grid tbody td in der Spezifitaet schlagen, sonst erbt der Hinweis
+   die grosse Ziffernschrift der Zeitzellen. */
+.grid tbody td.more-hint {
+  color: var(--muted);
+  font-size: clamp(0.7rem, 1.6vh, 1.1rem);
+  text-align: left;
+  padding-top: 0.3rem;
+}
+
+/* --- Smash-Rangliste ---------------------------------------------------- */
+.ranking {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(0.15rem, 0.7vh, 0.6rem);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.ranking li {
+  display: grid;
+  grid-template-columns: 2.2em 1fr auto;
+  align-items: center;
+  gap: clamp(0.3rem, 0.8vw, 0.9rem);
+  background: var(--bg-row);
+  border-radius: 8px;
+  padding: clamp(0.2rem, 0.8vh, 0.7rem) clamp(0.4rem, 0.8vw, 1rem);
+}
+
+.ranking .rank {
+  font-size: clamp(0.9rem, 2.4vh, 2rem);
+  font-weight: 700;
+  color: var(--muted);
+  text-align: center;
+}
+
+.ranking li.gold .rank { color: var(--gold); }
+.ranking li.silver .rank { color: var(--silver); }
+.ranking li.bronze .rank { color: var(--bronze); }
+
+.ranking .name {
+  font-size: clamp(0.95rem, 2.6vh, 2.1rem);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking .score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ranking .wins {
+  font-size: clamp(1rem, 2.8vh, 2.3rem);
+  font-weight: 700;
+}
+
+.ranking .detail {
+  display: block;
+  font-size: clamp(0.65rem, 1.5vh, 1rem);
+  color: var(--muted);
+}
+
+[hidden] { display: none !important; }
