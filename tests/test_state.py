@@ -471,6 +471,154 @@ class SwitchLogicTest(unittest.TestCase):
         self.assertEqual(state["info"]["text"], "")
 
 
+class BoardsTest(unittest.TestCase):
+    """Zusaetzliche, frei anlegbare Leaderboards fuer weitere Spiele."""
+
+    def test_race_board_forces_team_mode(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Mario Kart", "race", "solo", now=0)
+        self.assertEqual(board["mode"], "teams")
+        self.assertEqual([t["id"] for t in board["teams"]], ["a", "b"])
+        self.assertEqual(board["levels"], [])
+
+    def test_score_board_can_be_solo_or_teams(self):
+        state = lb.default_state()
+        solo = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        self.assertEqual(solo["teams"], [])
+        teams = lb.op_create_board(state, "Foosball", "score", "teams", now=0)
+        self.assertEqual(len(teams["teams"]), 2)
+
+    def test_unknown_kind_or_mode_is_rejected(self):
+        state = lb.default_state()
+        with self.assertRaises(ValueError):
+            lb.op_create_board(state, "X", "wettrennen", "teams", now=0)
+        with self.assertRaises(ValueError):
+            lb.op_create_board(state, "X", "score", "irgendwas", now=0)
+
+    def test_new_board_is_inserted_at_the_top(self):
+        state = lb.default_state()
+        lb.op_create_board(state, "Erstes", "score", "solo", now=0)
+        lb.op_create_board(state, "Zweites", "score", "solo", now=1)
+        self.assertEqual(state["boards"][0]["name"], "Zweites")
+
+    def test_board_limit_is_enforced(self):
+        state = lb.default_state()
+        for index in range(lb.MAX_BOARDS):
+            lb.op_create_board(state, f"Spiel {index}", "score", "solo", now=0)
+        with self.assertRaises(ValueError):
+            lb.op_create_board(state, "Zu viel", "score", "solo", now=0)
+
+    def test_rename_and_delete(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Alt", "score", "solo", now=0)
+        lb.op_rename_board(state, board["id"], "Neu")
+        self.assertEqual(state["boards"][0]["name"], "Neu")
+
+        lb.op_delete_board(state, board["id"])
+        self.assertEqual(state["boards"], [])
+        with self.assertRaises(KeyError):
+            lb.op_delete_board(state, board["id"])
+
+    def test_deleting_a_board_frees_the_screens_showing_it(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        lb.op_touch_screen(state, "tv", 0)
+        lb.op_assign_screen(state, "tv", f"/board/{board['id']}")
+        lb.op_delete_board(state, board["id"])
+        self.assertEqual(state["screens"][0]["view"], "/")
+
+    def test_board_view_is_assignable_and_disappears_after_deletion(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        lb.op_touch_screen(state, "tv", 0)
+        lb.op_assign_screen(state, "tv", f"/board/{board['id']}")
+        self.assertEqual(state["screens"][0]["view"], f"/board/{board['id']}")
+        lb.op_delete_board(state, board["id"])
+        with self.assertRaises(ValueError):
+            lb.op_assign_screen(state, "tv", f"/board/{board['id']}")
+
+    def test_race_board_runs_a_level_like_sos(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        level = lb.op_board_start_level(state, board["id"], "Strecke 1", True, now=0)
+        lb.op_board_timer(state, board["id"], level["id"], "a", "finish", now=10_000)
+        lb.op_board_timer(state, board["id"], level["id"], "b", "finish", now=20_000)
+        timers = state["boards"][0]["levels"][0]["timers"]
+        self.assertEqual(lb.timer_value_ms(timers["a"], 99_999), 10_000)
+        self.assertEqual(lb.timer_value_ms(timers["b"], 99_999), 20_000)
+
+        lb.op_board_adjust_timer(state, board["id"], level["id"], "a", 5_000, now=30_000)
+        self.assertEqual(lb.timer_value_ms(state["boards"][0]["levels"][0]["timers"]["a"], 99_999), 5_000)
+
+        lb.op_board_rename_level(state, board["id"], level["id"], "Umbenannt")
+        self.assertEqual(state["boards"][0]["levels"][0]["name"], "Umbenannt")
+
+        lb.op_board_delete_level(state, board["id"], level["id"])
+        self.assertEqual(state["boards"][0]["levels"], [])
+
+    def test_score_board_runs_entrants_like_smash(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "teams", now=0)
+        mia = lb.op_board_add_entrant(state, board["id"], "Mia", "a")
+        self.assertEqual(mia["teamId"], "a")
+
+        lb.op_board_entrant_score(state, board["id"], mia["id"], "wins", 3)
+        self.assertEqual(state["boards"][0]["entrants"][0]["wins"], 3)
+
+        lb.op_board_set_entrant_team(state, board["id"], mia["id"], "b")
+        self.assertEqual(state["boards"][0]["entrants"][0]["teamId"], "b")
+
+        lb.op_board_rename_entrant(state, board["id"], mia["id"], "Mia B.")
+        self.assertEqual(state["boards"][0]["entrants"][0]["name"], "Mia B.")
+
+        lb.op_board_delete_entrant(state, board["id"], mia["id"])
+        self.assertEqual(state["boards"][0]["entrants"], [])
+
+    def test_solo_board_ignores_team_assignment(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        entrant = lb.op_board_add_entrant(state, board["id"], "Mia", "a")
+        self.assertIsNone(entrant["teamId"])
+        with self.assertRaises(ValueError):
+            lb.op_board_set_entrant_team(state, board["id"], entrant["id"], "a")
+
+    def test_reset_clears_the_right_thing_per_kind(self):
+        state = lb.default_state()
+        race = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        lb.op_board_start_level(state, race["id"], "L1", True, now=0)
+        lb.op_board_reset(state, race["id"])
+        self.assertEqual(lb.find_board(state, race["id"])["levels"], [])
+
+        score = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        entrant = lb.op_board_add_entrant(state, score["id"], "Mia")
+        lb.op_board_entrant_score(state, score["id"], entrant["id"], "wins", 5)
+        lb.op_board_reset(state, score["id"])
+        found = lb.find_board(state, score["id"])
+        self.assertEqual(found["entrants"][0]["wins"], 0)
+        self.assertEqual(len(found["entrants"]), 1)  # Teilnehmer bleiben stehen
+
+    def test_migration_round_trips_boards(self):
+        state = lb.default_state()
+        race = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        lb.op_board_start_level(state, race["id"], "L1", True, now=0)
+        lb.op_board_timer(state, race["id"], state["boards"][0]["levels"][0]["id"], "a", "finish", now=5_000)
+        score = lb.op_create_board(state, "Schach", "score", "solo", now=1)
+        lb.op_board_add_entrant(state, score["id"], "Mia")
+
+        reloaded = lb.migrate_state(json.loads(json.dumps(state)))
+        self.assertEqual(len(reloaded["boards"]), 2)
+        names = {b["name"] for b in reloaded["boards"]}
+        self.assertEqual(names, {"Rennen", "Schach"})
+        reloaded_race = next(b for b in reloaded["boards"] if b["kind"] == "race")
+        self.assertEqual(lb.timer_value_ms(reloaded_race["levels"][0]["timers"]["a"], 99_999), 5_000)
+        reloaded_score = next(b for b in reloaded["boards"] if b["kind"] == "score")
+        self.assertEqual(reloaded_score["entrants"][0]["name"], "Mia")
+
+    def test_migration_drops_boards_with_unknown_kind(self):
+        state = lb.migrate_state({"boards": [{"id": "x", "name": "Kaputt", "kind": "quatsch"}]})
+        self.assertEqual(state["boards"], [])
+
+
 class AuthTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

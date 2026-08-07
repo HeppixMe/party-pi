@@ -331,22 +331,388 @@ function renderPlayers() {
   }
 }
 
+// -- Eigene Leaderboards ------------------------------------------------------
+// Zusaetzliche, frei anlegbare Leaderboards fuer weitere Spiele - dieselben
+// Bausteine wie oben bei S.O.S. und Smash, nur parametrisiert auf ein
+// bestimmtes Board statt fest auf state.sos/state.players verdrahtet.
+
+function boardTeamName(board, id) {
+  return board?.teams?.find((t) => t.id === id)?.name || (id === 'a' ? 'Team 1' : 'Team 2');
+}
+
+function renderBoards() {
+  const boards = state?.boards || [];
+  const list = $('boards');
+  $('boards-empty').hidden = boards.length > 0;
+  $('board-count').textContent = boards.length ? `(${boards.length})` : '';
+  list.replaceChildren();
+  for (const board of boards) {
+    list.append(renderBoardCard(board));
+  }
+}
+
+function renderBoardCard(board) {
+  const card = document.createElement('div');
+  card.className = 'list-item board-card';
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = board.name;
+  nameInput.maxLength = 60;
+  nameInput.dataset.key = `board-name-${board.id}`;
+  nameInput.addEventListener('change', () =>
+    send('/api/boards/rename', { boardId: board.id, name: nameInput.value }));
+  const del = document.createElement('button');
+  del.className = 'danger small';
+  del.type = 'button';
+  del.textContent = 'Löschen';
+  del.addEventListener('click', () => {
+    if (confirm(`Leaderboard „${board.name}“ wirklich löschen? Das lässt sich nicht rückgängig machen.`)) {
+      send('/api/boards/delete', { boardId: board.id });
+    }
+  });
+  head.append(nameInput, del);
+  card.append(head);
+
+  // Typ/Modus und ein Vorschau-Link in einer eigenen Zeile - im Kartenkopf
+  // neben dem Namensfeld wuerden sie es auf schmalen Bildschirmen fast ganz
+  // verdraengen.
+  const metaRow = document.createElement('div');
+  metaRow.className = 'row';
+  const badge = document.createElement('span');
+  badge.className = 'hint';
+  badge.textContent = `${board.kind === 'race' ? 'Rennen' : 'Rangliste'}`
+    + ` · ${board.mode === 'teams' ? 'Teams' : 'Einzelspieler'}`;
+  const open = document.createElement('a');
+  open.href = `/board/${board.id}`;
+  open.target = '_blank';
+  const openBtn = document.createElement('button');
+  openBtn.className = 'ghost small';
+  openBtn.type = 'button';
+  openBtn.textContent = 'Ansehen ↗';
+  open.append(openBtn);
+  metaRow.append(badge, open);
+  card.append(metaRow);
+
+  if (board.mode === 'teams') {
+    const teamRow = document.createElement('div');
+    teamRow.className = 'two-col';
+    for (const team of TEAM_IDS) {
+      const field = document.createElement('div');
+      field.className = 'field';
+      const label = document.createElement('label');
+      label.textContent = `Team ${team === 'a' ? '1' : '2'}`;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 60;
+      input.value = boardTeamName(board, team);
+      input.dataset.key = `board-team-${board.id}-${team}`;
+      input.addEventListener('change', () => {
+        const names = { a: boardTeamName(board, 'a'), b: boardTeamName(board, 'b') };
+        names[team] = input.value;
+        send('/api/boards/teams', { boardId: board.id, names });
+      });
+      field.append(label, input);
+      teamRow.append(field);
+    }
+    card.append(teamRow);
+  }
+
+  card.append(board.kind === 'race' ? renderBoardRaceControls(board) : renderBoardScoreControls(board));
+
+  const resetRow = document.createElement('div');
+  resetRow.className = 'row';
+  const reset = document.createElement('button');
+  reset.className = 'danger small';
+  reset.type = 'button';
+  reset.textContent = board.kind === 'race' ? 'Level leeren' : 'Punkte auf 0';
+  reset.addEventListener('click', () => {
+    if (confirm(`„${board.name}“ wirklich zurücksetzen?`)) {
+      send('/api/boards/reset', { boardId: board.id });
+    }
+  });
+  resetRow.append(reset);
+  card.append(resetRow);
+
+  return card;
+}
+
+function renderBoardRaceControls(board) {
+  const wrap = document.createElement('div');
+
+  const startRow = document.createElement('div');
+  startRow.className = 'row';
+  const nameInput = document.createElement('input');
+  nameInput.className = 'grow';
+  nameInput.type = 'text';
+  nameInput.placeholder = `Level ${(board.levels?.length || 0) + 1}`;
+  nameInput.dataset.key = `board-level-name-${board.id}`;
+  const startBtn = document.createElement('button');
+  startBtn.className = 'primary small';
+  startBtn.type = 'button';
+  startBtn.textContent = 'Neues Level starten';
+  startBtn.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    await send('/api/boards/level', { boardId: board.id, name: name || null, autostart: true });
+    nameInput.value = '';
+  });
+  startRow.append(nameInput, startBtn);
+  wrap.append(startRow);
+
+  const levels = document.createElement('div');
+  levels.className = 'list';
+  for (const level of [...(board.levels || [])].reverse()) {
+    levels.append(renderBoardLevelItem(board, level));
+  }
+  wrap.append(levels);
+  if (!board.levels?.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'Noch keine Level.';
+    wrap.append(empty);
+  }
+  return wrap;
+}
+
+function renderBoardLevelItem(board, level) {
+  const item = document.createElement('div');
+  item.className = 'list-item' + (level.active ? ' is-active' : '');
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = level.name;
+  nameInput.maxLength = 60;
+  nameInput.dataset.key = `board-level-rename-${board.id}-${level.id}`;
+  nameInput.addEventListener('change', () =>
+    send('/api/boards/level/rename', { boardId: board.id, levelId: level.id, name: nameInput.value }));
+  const del = document.createElement('button');
+  del.className = 'danger small';
+  del.type = 'button';
+  del.textContent = 'Löschen';
+  del.addEventListener('click', () => {
+    if (confirm(`Level „${level.name}“ wirklich löschen?`)) {
+      send('/api/boards/level/delete', { boardId: board.id, levelId: level.id });
+    }
+  });
+  head.append(nameInput, del);
+
+  const times = document.createElement('div');
+  times.className = 'times';
+  for (const team of TEAM_IDS) {
+    const timer = level.timers?.[team];
+    const field = document.createElement('div');
+    field.className = `time-field ${team}`;
+    const label = document.createElement('label');
+    label.textContent = boardTeamName(board, team);
+    // Derselbe Schluessel wie bei S.O.S. (nur nach Level-Id, nicht nach
+    // Board) - tick() unten aktualisiert beide Listen mit demselben Muster,
+    // und Level-Ids sind global eindeutig.
+    const input = document.createElement('input');
+    input.className = 'time';
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.dataset.key = `time-${level.id}-${team}`;
+    input.value = formatTime(timerValue(timer));
+    if (isRunning(timer)) input.dataset.live = '1';
+    input.addEventListener('change', () => {
+      const ms = parseTime(input.value);
+      if (ms === null) {
+        toast('Zeit bitte als mm:ss.z eingeben', 'error');
+        input.value = formatTime(timerValue(timer));
+        return;
+      }
+      send('/api/boards/timer/adjust', { boardId: board.id, levelId: level.id, team, valueMs: ms });
+    });
+    field.append(label, input);
+
+    const buttons = document.createElement('div');
+    buttons.className = 'row';
+    const toggle = document.createElement('button');
+    toggle.className = 'small' + (isRunning(timer) ? ' running' : '');
+    toggle.type = 'button';
+    toggle.textContent = isRunning(timer) ? 'Stopp' : 'Start';
+    toggle.addEventListener('click', () =>
+      send('/api/boards/timer', {
+        boardId: board.id, levelId: level.id, team,
+        action: isRunning(timer) ? 'stop' : 'start',
+      }));
+    const finish = document.createElement('button');
+    finish.className = 'small';
+    finish.type = 'button';
+    finish.textContent = timer?.finished ? 'offen setzen' : 'fertig';
+    finish.addEventListener('click', () =>
+      send('/api/boards/timer', {
+        boardId: board.id, levelId: level.id, team,
+        action: timer?.finished ? 'unfinish' : 'finish',
+      }));
+    buttons.append(toggle, finish);
+    field.append(buttons);
+    times.append(field);
+  }
+
+  item.append(head, times);
+  return item;
+}
+
+function renderBoardScoreControls(board) {
+  const wrap = document.createElement('div');
+
+  const addRow = document.createElement('div');
+  addRow.className = 'row';
+  const nameInput = document.createElement('input');
+  nameInput.className = 'grow';
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Name';
+  nameInput.maxLength = 60;
+  nameInput.dataset.key = `board-entrant-name-${board.id}`;
+  const addBtn = document.createElement('button');
+  addBtn.className = 'primary small';
+  addBtn.type = 'button';
+  addBtn.textContent = 'Hinzufügen';
+  const doAdd = async () => {
+    const name = nameInput.value.trim();
+    if (!name) return toast('Bitte einen Namen eingeben', 'error');
+    await send('/api/boards/entrant', { boardId: board.id, action: 'add', name });
+    nameInput.value = '';
+    nameInput.focus();
+  };
+  addBtn.addEventListener('click', doAdd);
+  nameInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') doAdd();
+  });
+  addRow.append(nameInput, addBtn);
+  wrap.append(addRow);
+
+  const entrants = document.createElement('div');
+  entrants.className = 'list';
+  for (const entrant of sortPlayers(board.entrants || [])) {
+    entrants.append(renderBoardEntrantItem(board, entrant));
+  }
+  wrap.append(entrants);
+  if (!board.entrants?.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'Noch keine Teilnehmer.';
+    wrap.append(empty);
+  }
+  return wrap;
+}
+
+function renderBoardEntrantItem(board, entrant) {
+  const item = document.createElement('div');
+  item.className = 'list-item';
+
+  const head = document.createElement('div');
+  head.className = 'player-row';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = entrant.name;
+  nameInput.maxLength = 60;
+  nameInput.dataset.key = `board-entrant-rename-${board.id}-${entrant.id}`;
+  nameInput.addEventListener('change', () =>
+    send('/api/boards/entrant', {
+      boardId: board.id, action: 'rename', id: entrant.id, name: nameInput.value,
+    }));
+  const score = document.createElement('span');
+  score.className = 'score';
+  score.textContent = `${entrant.wins}:${entrant.losses} · ${winRate(entrant)} %`;
+  head.append(nameInput, score);
+  item.append(head);
+
+  if (board.mode === 'teams') {
+    const teamPick = document.createElement('div');
+    teamPick.className = 'team-pick';
+    for (const team of TEAM_IDS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = boardTeamName(board, team);
+      if (entrant.teamId === team) button.classList.add(`on-${team}`);
+      button.addEventListener('click', () => send('/api/boards/entrant', {
+        boardId: board.id,
+        action: 'team',
+        id: entrant.id,
+        teamId: entrant.teamId === team ? null : team,
+      }));
+      teamPick.append(button);
+    }
+    item.append(teamPick);
+  }
+
+  const buttons = document.createElement('div');
+  buttons.className = 'row';
+  const mk = (text, cls, handler) => {
+    const button = document.createElement('button');
+    button.className = cls;
+    button.type = 'button';
+    button.textContent = text;
+    button.addEventListener('click', handler);
+    return button;
+  };
+  const score1 = (field, delta) =>
+    send('/api/boards/entrant', { boardId: board.id, action: 'score', id: entrant.id, field, delta });
+  buttons.append(
+    mk('+1 Sieg', 'primary small', () => score1('wins', 1)),
+    mk('−1', 'small', () => score1('wins', -1)),
+    mk('+1 Niederlage', 'small', () => score1('losses', 1)),
+    mk('−1', 'small', () => score1('losses', -1)),
+    mk('Löschen', 'danger small', () => {
+      if (confirm(`„${entrant.name}“ wirklich löschen?`)) {
+        send('/api/boards/entrant', { boardId: board.id, action: 'delete', id: entrant.id });
+      }
+    }),
+  );
+  item.append(buttons);
+
+  return item;
+}
+
+$('add-board').addEventListener('click', async () => {
+  const name = $('board-name').value.trim();
+  if (!name) return toast('Bitte einen Namen für das Spiel eingeben', 'error');
+  await send('/api/boards/create', { name, kind: $('board-kind').value, mode: $('board-mode').value });
+  $('board-name').value = '';
+  $('board-name').focus();
+  toast('Leaderboard erstellt');
+});
+$('board-name').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') $('add-board').click();
+});
+// Ein Zeitrennen braucht zwei vergleichbare Bahnen - der Modus ist bei
+// "Rennen" deshalb immer "Teams", die Auswahl wird gesperrt statt eine
+// Kombination anzubieten, die es serverseitig gar nicht gibt.
+$('board-kind').addEventListener('change', () => {
+  const isRace = $('board-kind').value === 'race';
+  $('board-mode').disabled = isRace;
+  if (isRace) $('board-mode').value = 'teams';
+});
+
 // -- Uhren ticken ------------------------------------------------------------
+function tickLevelInputs(levels, now) {
+  for (const level of levels) {
+    for (const team of TEAM_IDS) {
+      const timer = level.timers?.[team];
+      if (!isRunning(timer)) continue;
+      const input = document.querySelector(`[data-key="time-${level.id}-${team}"]`);
+      if (input && document.activeElement !== input) {
+        input.value = formatTime(timerValue(timer, now));
+      }
+    }
+  }
+}
+
 function tick() {
   const level = activeLevel();
   const now = serverNow();
   for (const team of TEAM_IDS) {
     $(`clock-${team}`).textContent = formatTime(timerValue(level?.timers?.[team], now));
   }
-  for (const level2 of state?.sos?.levels || []) {
-    for (const team of TEAM_IDS) {
-      const timer = level2.timers?.[team];
-      if (!isRunning(timer)) continue;
-      const input = document.querySelector(`[data-key="time-${level2.id}-${team}"]`);
-      if (input && document.activeElement !== input) {
-        input.value = formatTime(timerValue(timer, now));
-      }
-    }
+  tickLevelInputs(state?.sos?.levels || [], now);
+  for (const board of state?.boards || []) {
+    if (board.kind === 'race') tickLevelInputs(board.levels || [], now);
   }
   requestAnimationFrame(tick);
 }
@@ -499,6 +865,7 @@ connectEvents({
       renderCurrent();
       renderLevels();
       renderPlayers();
+      renderBoards();
       renderScreenBlock(payload);
       renderSettings();
     });

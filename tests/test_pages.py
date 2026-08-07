@@ -295,6 +295,147 @@ class ScreenTest(ServerTestCase):
         self.assertTrue(all(view["label"] for view in payload["views"]))
 
 
+class BoardsPageTest(ServerTestCase):
+    """Eigene Leaderboards ueber die HTTP-Schnittstelle - Rechte, Routen, Sichtbarkeit."""
+
+    def create(self, name="Schach", kind="score", mode="solo"):
+        status, body, _type = self.request(
+            "POST", "/api/boards/create", {"name": name, "kind": kind, "mode": mode}
+        )
+        self.assertEqual(status, 200, body)
+        return body["board"]
+
+    def test_create_needs_login(self):
+        status, _body, _type = self.request(
+            "POST", "/api/boards/create", {"name": "X", "kind": "score", "mode": "solo"}
+        )
+        self.assertEqual(status, 401)
+
+    def test_board_page_is_public_and_reachable_even_without_a_valid_id(self):
+        self.login()
+        board = self.create()
+        for path in (f"/board/{board['id']}", "/board/gibtsnicht"):
+            status, body, content_type = self.request("GET", path)
+            self.assertEqual(status, 200, path)
+            self.assertIn("text/html", content_type)
+            self.assertIn(b"</html>", body)
+
+    def test_created_board_shows_up_in_state_and_view_list(self):
+        self.login()
+        board = self.create("Mario Kart", "race", "teams")
+        _status, payload, _type = self.request("GET", "/api/state")
+        names = [b["name"] for b in payload["state"]["boards"]]
+        self.assertIn("Mario Kart", names)
+        paths = [v["path"] for v in payload["views"]]
+        self.assertIn(f"/board/{board['id']}", paths)
+
+    def test_board_can_be_assigned_to_a_screen(self):
+        self.login()
+        board = self.create()
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        status, body, _type = self.request(
+            "POST", "/api/screens/assign", {"screenId": "tv", "view": f"/board/{board['id']}"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["screen"]["view"], f"/board/{board['id']}")
+
+    def test_rename_and_delete(self):
+        self.login()
+        board = self.create("Alt")
+        self.request("POST", "/api/boards/rename", {"boardId": board["id"], "name": "Neu"})
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["boards"][0]["name"], "Neu")
+
+        status, _body, _type = self.request("POST", "/api/boards/delete", {"boardId": board["id"]})
+        self.assertEqual(status, 200)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["boards"], [])
+
+    def test_race_board_full_round(self):
+        self.login()
+        board = self.create("Rennen", "race", "teams")
+        status, body, _type = self.request(
+            "POST", "/api/boards/level", {"boardId": board["id"], "name": "Strecke 1"}
+        )
+        self.assertEqual(status, 200)
+        level_id = body["level"]["id"]
+
+        self.request(
+            "POST", "/api/boards/timer",
+            {"boardId": board["id"], "levelId": level_id, "team": "a", "action": "finish"},
+        )
+        self.request(
+            "POST", "/api/boards/timer/adjust",
+            {"boardId": board["id"], "levelId": level_id, "team": "a", "valueMs": 12_000},
+        )
+        _status, payload, _type = self.request("GET", "/api/state")
+        level = payload["state"]["boards"][0]["levels"][0]
+        self.assertTrue(level["timers"]["a"]["finished"])
+        self.assertEqual(level["timers"]["a"]["elapsedMs"], 12_000)
+
+    def test_score_board_full_round(self):
+        self.login()
+        board = self.create("Schach", "score", "teams")
+        status, body, _type = self.request(
+            "POST", "/api/boards/entrant",
+            {"boardId": board["id"], "action": "add", "name": "Mia", "teamId": "a"},
+        )
+        self.assertEqual(status, 200)
+        entrant_id = body["entrant"]["id"]
+
+        self.request(
+            "POST", "/api/boards/entrant",
+            {"boardId": board["id"], "action": "score", "id": entrant_id, "field": "wins", "delta": 2},
+        )
+        _status, payload, _type = self.request("GET", "/api/state")
+        entrant = payload["state"]["boards"][0]["entrants"][0]
+        self.assertEqual(entrant["wins"], 2)
+        self.assertEqual(entrant["teamId"], "a")
+
+    def test_reset_only_touches_the_named_board(self):
+        self.login()
+        keep = self.create("Bleibt", "score", "solo")
+        gone = self.create("Wird geleert", "score", "solo")
+        self.request("POST", "/api/boards/entrant", {"boardId": keep["id"], "action": "add", "name": "Mia"})
+        self.request("POST", "/api/boards/entrant", {"boardId": gone["id"], "action": "add", "name": "Tom"})
+        entrant_tom = self.request("GET", "/api/state")[1]["state"]["boards"]
+        tom_id = next(b for b in entrant_tom if b["id"] == gone["id"])["entrants"][0]["id"]
+        self.request(
+            "POST", "/api/boards/entrant",
+            {"boardId": gone["id"], "action": "score", "id": tom_id, "field": "wins", "delta": 3},
+        )
+
+        self.request("POST", "/api/boards/reset", {"boardId": gone["id"]})
+        _status, payload, _type = self.request("GET", "/api/state")
+        by_id = {b["id"]: b for b in payload["state"]["boards"]}
+        self.assertEqual(by_id[gone["id"]]["entrants"][0]["wins"], 0)
+        self.assertEqual(len(by_id[keep["id"]]["entrants"]), 1)
+
+    def test_board_limit_gives_a_clean_error(self):
+        self.login()
+        for index in range(lb.MAX_BOARDS):
+            self.create(f"Spiel {index}")
+        status, body, _type = self.request(
+            "POST", "/api/boards/create", {"name": "Zu viel", "kind": "score", "mode": "solo"}
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("schon", body["error"])
+
+    def test_guest_cannot_touch_boards(self):
+        self.login()
+        board = self.create()
+        self.cookies.clear()
+        self.request("POST", "/api/join", {"name": "Mia", "teamId": "a"})
+        for path, body in (
+            ("/api/boards/create", {"name": "X", "kind": "score", "mode": "solo"}),
+            ("/api/boards/rename", {"boardId": board["id"], "name": "Gekapert"}),
+            ("/api/boards/delete", {"boardId": board["id"]}),
+            ("/api/boards/entrant", {"boardId": board["id"], "action": "add", "name": "X"}),
+        ):
+            status, _body, _type = self.request("POST", path, body)
+            self.assertEqual(status, 401, path)
+
+
 class SwitchesTest(ServerTestCase):
     def test_effects_can_be_switched(self):
         self.login()

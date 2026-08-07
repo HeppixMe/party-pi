@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Leaderboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/display.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Leaderboard</h1>
+    <div class="badges">
+      <span class="badge" id="kind-badge" hidden></span>
+      <span class="badge badge-live" id="conn-badge">verbinde…</span>
+    </div>
+  </header>
+
+  <main class="board board-single">
+    <section class="panel panel-sos" id="race-panel" hidden>
+      <div class="panel-head">
+        <h2 id="race-heading">Rennen</h2>
+        <p class="lead" id="race-lead">Noch kein Level gestartet</p>
+      </div>
+
+      <div class="panel-body">
+      <table class="grid" id="race-table">
+        <thead>
+          <tr>
+            <th class="col-level">Level</th>
+            <th class="col-team" id="head-a">Team 1</th>
+            <th class="col-team" id="head-b">Team 2</th>
+          </tr>
+        </thead>
+        <tbody id="race-body"></tbody>
+        <tfoot>
+          <tr class="row-total">
+            <th>Gesamt</th>
+            <td id="total-a">00:00.0</td>
+            <td id="total-b">00:00.0</td>
+          </tr>
+          <tr class="row-wins">
+            <th>Level gewonnen</th>
+            <td id="wins-a">0</td>
+            <td id="wins-b">0</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <p class="empty" id="race-empty">Wartet auf das erste Level…</p>
+      </div>
+    </section>
+
+    <section class="panel panel-smash" id="score-panel" hidden>
+      <div class="panel-head">
+        <h2 id="score-heading">Rangliste</h2>
+        <p class="lead">Meiste Siege</p>
+      </div>
+      <div class="panel-body">
+        <ol class="ranking" id="score-list"></ol>
+        <p class="empty" id="score-empty">Noch keine Teilnehmer eingetragen…</p>
+      </div>
+    </section>
+
+    <section class="panel" id="missing-panel" hidden>
+      <div class="panel-body">
+        <p class="empty">Dieses Leaderboard gibt es nicht (mehr).</p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/static/board.js"></script>
+</body>
+</html>

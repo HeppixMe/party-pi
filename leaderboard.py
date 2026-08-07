@@ -77,6 +77,7 @@ PLAYER_TTL = 48 * 3600
 
 MAX_PLAYERS = 100
 MAX_SCREENS = 20
+MAX_BOARDS = 16
 SCREEN_OFFLINE_AFTER = 120_000  # ms ohne Lebenszeichen -> als offline anzeigen
 
 DEFAULT_INFO_TEXT = (
@@ -98,6 +99,19 @@ VIEWS = (
 )
 VIEW_PATHS = {path for path, _label in VIEWS}
 SSE_HEARTBEAT = 15.0
+
+
+def _valid_view(state: dict, view) -> bool:
+    """Eine Ansicht ist gueltig, wenn sie fest verdrahtet ist oder ein
+    bestehendes eigenes Leaderboard meint."""
+    if view in VIEW_PATHS:
+        return True
+    if isinstance(view, str) and view.startswith("/board/"):
+        return find_board(state, view[len("/board/"):]) is not None
+    return False
+
+
+
 PBKDF2_ITERATIONS = 200_000
 
 TEAM_IDS = ("a", "b")
@@ -197,6 +211,10 @@ def default_state() -> dict:
         "display": {"fx": "full"},
         "screens": [],
         "fan": {"force": False},
+        # Zusaetzliche, frei anlegbare Leaderboards fuer weitere Spiele -
+        # das eingebaute S.O.S.-Rennen und die Smash-Rangliste oben bleiben
+        # davon unberuehrt und sind immer da.
+        "boards": [],
     }
 
 
@@ -211,6 +229,61 @@ def new_level(name: str, running_since=None) -> dict:
         timer["runningSince"] = running_since
         timers[team_id] = timer
     return {"id": new_id(), "name": name, "active": True, "timers": timers}
+
+
+def new_board(name, kind: str, mode: str) -> dict:
+    """
+    Ein zusaetzliches Leaderboard fuer ein weiteres Spiel.
+
+    kind='race'  - Zeitrennen wie S.O.S.: immer zwei Teams (a/b), Level mit
+                   Uhren. Ein Rennen mit nur einer Bahn ergibt keinen Sinn,
+                   deshalb erzwingt 'race' den Modus 'teams'.
+    kind='score' - Sieg/Niederlage-Rangliste wie Smash Bros: entweder mit
+                   Team-Zuordnung oder als reine Einzelspieler-Liste.
+    """
+    if kind not in ("race", "score"):
+        raise ValueError("Typ muss 'race' oder 'score' sein")
+    if mode not in ("teams", "solo"):
+        raise ValueError("Modus muss 'teams' oder 'solo' sein")
+    if kind == "race":
+        mode = "teams"
+    board = {
+        "id": new_id(),
+        "name": clamp_name(name, "Leaderboard", limit=60),
+        "kind": kind,
+        "mode": mode,
+        "createdAt": 0,
+        "teams": (
+            [{"id": "a", "name": "Team 1"}, {"id": "b", "name": "Team 2"}]
+            if mode == "teams" else []
+        ),
+    }
+    if kind == "race":
+        board["levels"] = []
+    else:
+        board["entrants"] = []
+    return board
+
+
+def find_board(state: dict, board_id) -> dict | None:
+    for board in state["boards"]:
+        if board["id"] == board_id:
+            return board
+    return None
+
+
+def board_find_level(board: dict, level_id) -> dict | None:
+    for level in board.get("levels", []):
+        if level["id"] == level_id:
+            return level
+    return None
+
+
+def board_find_entrant(board: dict, entrant_id) -> dict | None:
+    for entrant in board.get("entrants", []):
+        if entrant["id"] == entrant_id:
+            return entrant
+    return None
 
 
 def timer_value_ms(timer: dict, now: int) -> int:
@@ -231,10 +304,14 @@ def freeze_timer(timer: dict, now: int) -> None:
         timer["runningSince"] = None
 
 
-def freeze_all(state: dict, now: int) -> None:
-    for level in state["sos"]["levels"]:
+def freeze_levels(levels: list, now: int) -> None:
+    for level in levels:
         for timer in level["timers"].values():
             freeze_timer(timer, now)
+
+
+def freeze_all(state: dict, now: int) -> None:
+    freeze_levels(state["sos"]["levels"], now)
 
 
 def compute_standings(state: dict, now: int) -> dict:
@@ -373,6 +450,83 @@ def migrate_state(raw) -> dict:
     if isinstance(fan, dict):
         state["fan"]["force"] = bool(fan.get("force"))
 
+    boards = raw.get("boards")
+    if isinstance(boards, list):
+        for stored in boards:
+            if not isinstance(stored, dict):
+                continue
+            kind = stored.get("kind")
+            if kind not in ("race", "score"):
+                continue
+            mode = stored.get("mode") if stored.get("mode") in ("teams", "solo") else "teams"
+            board = new_board(stored.get("name"), kind, mode)
+            board["id"] = stored.get("id") or board["id"]
+            board["createdAt"] = as_int(stored.get("createdAt"), 0)
+
+            stored_teams = stored.get("teams")
+            if board["mode"] == "teams" and isinstance(stored_teams, list):
+                for index, team_id in enumerate(TEAM_IDS):
+                    found = next(
+                        (t for t in stored_teams if isinstance(t, dict) and t.get("id") == team_id),
+                        None,
+                    )
+                    if found:
+                        board["teams"][index]["name"] = clamp_name(
+                            found.get("name"), board["teams"][index]["name"]
+                        )
+
+            if board["kind"] == "race":
+                stored_levels = stored.get("levels")
+                if isinstance(stored_levels, list):
+                    for stored_level in stored_levels:
+                        if not isinstance(stored_level, dict):
+                            continue
+                        level = {
+                            "id": stored_level.get("id") or new_id(),
+                            "name": clamp_name(stored_level.get("name"), "Level"),
+                            "active": bool(stored_level.get("active")),
+                            "timers": {},
+                        }
+                        stored_timers = (
+                            stored_level.get("timers")
+                            if isinstance(stored_level.get("timers"), dict) else {}
+                        )
+                        for team_id in TEAM_IDS:
+                            timer = stored_timers.get(team_id)
+                            if not isinstance(timer, dict):
+                                timer = new_timer()
+                            running = timer.get("runningSince")
+                            level["timers"][team_id] = {
+                                "elapsedMs": max(0, as_int(timer.get("elapsedMs"), 0)),
+                                "runningSince": as_int(running) if running is not None else None,
+                                "finished": bool(timer.get("finished")),
+                            }
+                        board["levels"].append(level)
+            else:
+                stored_entrants = stored.get("entrants")
+                if isinstance(stored_entrants, list):
+                    for stored_entrant in stored_entrants:
+                        if not isinstance(stored_entrant, dict):
+                            continue
+                        name = clamp_name(stored_entrant.get("name"), limit=40)
+                        if not name:
+                            continue
+                        team_id = stored_entrant.get("teamId")
+                        board["entrants"].append(
+                            {
+                                "id": stored_entrant.get("id") or new_id(),
+                                "name": name,
+                                "teamId": (
+                                    team_id if board["mode"] == "teams" and team_id in TEAM_IDS
+                                    else None
+                                ),
+                                "wins": max(0, as_int(stored_entrant.get("wins"), 0)),
+                                "losses": max(0, as_int(stored_entrant.get("losses"), 0)),
+                            }
+                        )
+
+            state["boards"].append(board)
+
     screens = raw.get("screens")
     if isinstance(screens, list):
         for stored in screens:
@@ -386,7 +540,7 @@ def migrate_state(raw) -> dict:
                 {
                     "id": screen_id,
                     "name": clamp_name(stored.get("name"), screen_id, limit=40),
-                    "view": view if view in VIEW_PATHS else "/",
+                    "view": view if _valid_view(state, view) else "/",
                     "seenAt": as_int(stored.get("seenAt"), 0),
                 }
             )
@@ -438,12 +592,16 @@ class Store:
 
     def _payload_locked(self) -> str:
         now = now_ms()
+        views = [{"path": path, "label": label} for path, label in VIEWS]
+        # Eigene Leaderboards tauchen automatisch in der Bildschirm-Palette
+        # auf - niemand soll eine Ansicht von Hand eintragen muessen.
+        for board in self.state["boards"]:
+            icon = "\U0001F3C1" if board["kind"] == "race" else "\U0001F3C6"
+            views.append({"path": f"/board/{board['id']}", "label": f"{icon} {board['name']}"})
         body = {
             "state": self.state,
             "standings": compute_standings(self.state, now),
-            # Die Ansichtsliste ist fest verdrahtet und winzig - sie gehoert in
-            # jede Nachricht, damit keine Seite raten muss, woher sie kommt.
-            "views": [{"path": path, "label": label} for path, label in VIEWS],
+            "views": views,
             "serverNow": now,
         }
         return json.dumps(body, ensure_ascii=False)
@@ -714,7 +872,7 @@ def op_assign_screen(state: dict, screen_id, view) -> dict:
     screen = find_screen(state, screen_id)
     if screen is None:
         raise KeyError("Bildschirm unbekannt")
-    if view not in VIEW_PATHS:
+    if not _valid_view(state, view):
         raise ValueError("Unbekannte Ansicht")
     screen["view"] = view
     return screen
@@ -733,6 +891,196 @@ def op_delete_screen(state: dict, screen_id) -> None:
     if len(remaining) == len(screens):
         raise KeyError("Bildschirm unbekannt")
     state["screens"] = remaining
+
+
+# -- Eigene Leaderboards ------------------------------------------------------
+def op_create_board(state: dict, name, kind, mode, now: int) -> dict:
+    if len(state["boards"]) >= MAX_BOARDS:
+        raise ValueError(f"Es sind schon {MAX_BOARDS} Leaderboards angelegt")
+    board = new_board(name, kind, mode)
+    board["createdAt"] = now
+    # Neuestes zuerst - im Admin sofort sichtbar, ohne dass man scrollen muss.
+    state["boards"].insert(0, board)
+    return board
+
+
+def op_rename_board(state: dict, board_id, name) -> None:
+    board = find_board(state, board_id)
+    if board is None:
+        raise KeyError("Leaderboard unbekannt")
+    board["name"] = clamp_name(name, board["name"], limit=60)
+
+
+def op_delete_board(state: dict, board_id) -> None:
+    boards = state["boards"]
+    remaining = [b for b in boards if b["id"] != board_id]
+    if len(remaining) == len(boards):
+        raise KeyError("Leaderboard unbekannt")
+    state["boards"] = remaining
+    # Bildschirme, die dieses Leaderboard zeigten, fallen auf das
+    # Haupt-Leaderboard zurueck - sonst zeigen sie fuer immer eine Ansicht,
+    # die es nicht mehr gibt.
+    view = f"/board/{board_id}"
+    for screen in state["screens"]:
+        if screen["view"] == view:
+            screen["view"] = "/"
+
+
+def op_set_board_team_names(state: dict, board_id, names: dict) -> None:
+    board = find_board(state, board_id)
+    if board is None:
+        raise KeyError("Leaderboard unbekannt")
+    if board["mode"] != "teams":
+        raise ValueError("Dieses Leaderboard hat keine Teams")
+    for team in board["teams"]:
+        if team["id"] in names:
+            team["name"] = clamp_name(names[team["id"]], team["name"])
+
+
+def op_board_reset(state: dict, board_id) -> None:
+    board = find_board(state, board_id)
+    if board is None:
+        raise KeyError("Leaderboard unbekannt")
+    if board["kind"] == "race":
+        board["levels"] = []
+    else:
+        for entrant in board["entrants"]:
+            entrant["wins"] = 0
+            entrant["losses"] = 0
+
+
+# -- Leaderboards vom Typ "Rennen" (wie S.O.S., Zeit-Uhren pro Team) ---------
+def op_board_start_level(state: dict, board_id, name, autostart: bool, now: int) -> dict:
+    board = find_board(state, board_id)
+    if board is None or board["kind"] != "race":
+        raise KeyError("Renn-Leaderboard unbekannt")
+    freeze_levels(board["levels"], now)
+    for level in board["levels"]:
+        level["active"] = False
+    label = clamp_name(name, f"Level {len(board['levels']) + 1}")
+    level = new_level(label, running_since=now if autostart else None)
+    board["levels"].append(level)
+    return level
+
+
+def op_board_rename_level(state: dict, board_id, level_id, name) -> None:
+    board = find_board(state, board_id)
+    level = board_find_level(board, level_id) if board else None
+    if level is None:
+        raise KeyError("Level unbekannt")
+    level["name"] = clamp_name(name, level["name"])
+
+
+def op_board_delete_level(state: dict, board_id, level_id) -> None:
+    board = find_board(state, board_id)
+    if board is None:
+        raise KeyError("Leaderboard unbekannt")
+    levels = board["levels"]
+    remaining = [lv for lv in levels if lv["id"] != level_id]
+    if len(remaining) == len(levels):
+        raise KeyError("Level unbekannt")
+    board["levels"] = remaining
+    if remaining and not any(lv.get("active") for lv in remaining):
+        remaining[-1]["active"] = True
+
+
+def op_board_timer(state: dict, board_id, level_id, team_id: str, action: str, now: int) -> None:
+    board = find_board(state, board_id)
+    level = board_find_level(board, level_id) if board else None
+    if level is None or team_id not in TEAM_IDS:
+        raise KeyError("Level oder Team unbekannt")
+    timer = level["timers"][team_id]
+
+    if action == "start":
+        if timer["runningSince"] is None:
+            timer["runningSince"] = now
+        timer["finished"] = False
+    elif action == "stop":
+        freeze_timer(timer, now)
+    elif action == "finish":
+        freeze_timer(timer, now)
+        timer["finished"] = True
+    elif action == "unfinish":
+        timer["finished"] = False
+    elif action == "reset":
+        level["timers"][team_id] = new_timer()
+    else:
+        raise ValueError(f"Unbekannte Aktion '{action}'")
+
+
+def op_board_adjust_timer(
+    state: dict, board_id, level_id, team_id: str, value_ms: int, now: int
+) -> None:
+    board = find_board(state, board_id)
+    level = board_find_level(board, level_id) if board else None
+    if level is None or team_id not in TEAM_IDS:
+        raise KeyError("Level oder Team unbekannt")
+    timer = level["timers"][team_id]
+    timer["elapsedMs"] = max(0, as_int(value_ms, 0))
+    if timer["runningSince"] is not None:
+        timer["runningSince"] = now
+
+
+# -- Leaderboards vom Typ "Rangliste" (wie Smash, Sieg/Niederlage) ----------
+def op_board_add_entrant(state: dict, board_id, name, team_id=None) -> dict:
+    board = find_board(state, board_id)
+    if board is None or board["kind"] != "score":
+        raise KeyError("Ranglisten-Leaderboard unbekannt")
+    label = clamp_name(name, limit=40)
+    if not label:
+        raise ValueError("Name fehlt")
+    if len(board["entrants"]) >= MAX_PLAYERS:
+        raise ValueError(f"Es sind schon {MAX_PLAYERS} Teilnehmer eingetragen")
+    entrant = {
+        "id": new_id(),
+        "name": label,
+        "teamId": team_id if (board["mode"] == "teams" and team_id in TEAM_IDS) else None,
+        "wins": 0,
+        "losses": 0,
+    }
+    board["entrants"].append(entrant)
+    return entrant
+
+
+def op_board_rename_entrant(state: dict, board_id, entrant_id, name) -> None:
+    board = find_board(state, board_id)
+    entrant = board_find_entrant(board, entrant_id) if board else None
+    if entrant is None:
+        raise KeyError("Teilnehmer unbekannt")
+    entrant["name"] = clamp_name(name, entrant["name"], limit=40)
+
+
+def op_board_delete_entrant(state: dict, board_id, entrant_id) -> None:
+    board = find_board(state, board_id)
+    if board is None:
+        raise KeyError("Leaderboard unbekannt")
+    entrants = board["entrants"]
+    remaining = [e for e in entrants if e["id"] != entrant_id]
+    if len(remaining) == len(entrants):
+        raise KeyError("Teilnehmer unbekannt")
+    board["entrants"] = remaining
+
+
+def op_board_entrant_score(state: dict, board_id, entrant_id, field: str, delta: int) -> None:
+    if field not in ("wins", "losses"):
+        raise ValueError("Feld muss 'wins' oder 'losses' sein")
+    board = find_board(state, board_id)
+    entrant = board_find_entrant(board, entrant_id) if board else None
+    if entrant is None:
+        raise KeyError("Teilnehmer unbekannt")
+    entrant[field] = max(0, as_int(entrant[field], 0) + as_int(delta, 0))
+
+
+def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> None:
+    board = find_board(state, board_id)
+    entrant = board_find_entrant(board, entrant_id) if board else None
+    if entrant is None:
+        raise KeyError("Teilnehmer unbekannt")
+    if board["mode"] != "teams":
+        raise ValueError("Dieses Leaderboard hat keine Teams")
+    if team_id is not None and team_id not in TEAM_IDS:
+        raise ValueError("Unbekanntes Team")
+    entrant["teamId"] = team_id
 
 
 # ---------------------------------------------------------------------------
@@ -1003,6 +1351,10 @@ class Handler(BaseHTTPRequestHandler):
             # Der Name steckt im Pfad; die Seite meldet sich selbst per API an.
             return self._static("screen.html") if clamp_screen_id(path[len("/screen/"):]) \
                 else self._error(HTTPStatus.NOT_FOUND, "Ungueltiger Bildschirmname")
+        if path.startswith("/board/"):
+            # Die Kennung steckt im Pfad; board.js sucht sie sich selbst aus
+            # dem Live-Zustand - unbekannte IDs zeigen dort einen Hinweis.
+            return self._static("board.html")
 
         if path == "/api/state":
             payload = json.loads(self.store.payload())
@@ -1233,6 +1585,52 @@ class Handler(BaseHTTPRequestHandler):
                 lambda s: op_set_info(s, body.get("text"))
             ),
             "/api/fan": lambda body, now: self._set_fan(body),
+            # -- Eigene Leaderboards -----------------------------------------
+            "/api/boards/create": lambda body, now: {
+                "board": store.mutate(
+                    lambda s: op_create_board(
+                        s, body.get("name"), body.get("kind"), body.get("mode"), now
+                    )
+                )
+            },
+            "/api/boards/rename": lambda body, now: store.mutate(
+                lambda s: op_rename_board(s, body.get("boardId"), body.get("name"))
+            ),
+            "/api/boards/delete": lambda body, now: store.mutate(
+                lambda s: op_delete_board(s, body.get("boardId"))
+            ),
+            "/api/boards/teams": lambda body, now: store.mutate(
+                lambda s: op_set_board_team_names(s, body.get("boardId"), body.get("names") or {})
+            ),
+            "/api/boards/reset": lambda body, now: store.mutate(
+                lambda s: op_board_reset(s, body.get("boardId"))
+            ),
+            "/api/boards/level": lambda body, now: {
+                "level": store.mutate(
+                    lambda s: op_board_start_level(
+                        s, body.get("boardId"), body.get("name"), body.get("autostart", True), now
+                    )
+                )
+            },
+            "/api/boards/level/rename": lambda body, now: store.mutate(
+                lambda s: op_board_rename_level(s, body.get("boardId"), body.get("levelId"), body.get("name"))
+            ),
+            "/api/boards/level/delete": lambda body, now: store.mutate(
+                lambda s: op_board_delete_level(s, body.get("boardId"), body.get("levelId"))
+            ),
+            "/api/boards/timer": lambda body, now: store.mutate(
+                lambda s: op_board_timer(
+                    s, body.get("boardId"), body.get("levelId"), body.get("team"),
+                    body.get("action", ""), now,
+                )
+            ),
+            "/api/boards/timer/adjust": lambda body, now: store.mutate(
+                lambda s: op_board_adjust_timer(
+                    s, body.get("boardId"), body.get("levelId"), body.get("team"),
+                    body.get("valueMs"), now,
+                )
+            ),
+            "/api/boards/entrant": lambda body, now: self._board_entrant(body),
         }
 
     def _set_fan(self, body: dict):
@@ -1284,6 +1682,36 @@ class Handler(BaseHTTPRequestHandler):
         if action == "team":
             return store.mutate(
                 lambda s: op_set_player_team(s, body.get("id"), body.get("teamId"))
+            )
+        raise ValueError(f"Unbekannte Aktion '{action}'")
+
+    def _board_entrant(self, body: dict):
+        action = body.get("action", "add")
+        store = self.store
+        board_id = body.get("boardId")
+        if action == "add":
+            return {
+                "entrant": store.mutate(
+                    lambda s: op_board_add_entrant(s, board_id, body.get("name"), body.get("teamId"))
+                )
+            }
+        if action == "rename":
+            return store.mutate(
+                lambda s: op_board_rename_entrant(s, board_id, body.get("id"), body.get("name"))
+            )
+        if action == "delete":
+            return store.mutate(
+                lambda s: op_board_delete_entrant(s, board_id, body.get("id"))
+            )
+        if action == "score":
+            return store.mutate(
+                lambda s: op_board_entrant_score(
+                    s, board_id, body.get("id"), body.get("field", ""), body.get("delta", 0)
+                )
+            )
+        if action == "team":
+            return store.mutate(
+                lambda s: op_board_set_entrant_team(s, board_id, body.get("id"), body.get("teamId"))
             )
         raise ValueError(f"Unbekannte Aktion '{action}'")
 

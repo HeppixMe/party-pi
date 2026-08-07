@@ -41,6 +41,9 @@ body {
   .board { grid-template-columns: 1fr; grid-template-rows: 1.3fr 1fr; }
 }
 
+/* Eigene Leaderboards zeigen immer nur ein Spiel - keine zweite Spalte noetig. */
+.board.board-single { grid-template-columns: 1fr; }
+
 .board .panel {
   padding: clamp(0.5rem, 1.4vh, 1.3rem);
   display: flex;

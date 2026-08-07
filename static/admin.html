@@ -107,6 +107,43 @@
       </div>
     </section>
 
+    <!-- --------------------------------------------- Eigene Leaderboards -->
+    <section class="panel">
+      <h2>Eigene Leaderboards</h2>
+      <p class="hint" style="margin-top:0">
+        Für jedes weitere Spiel ein eigenes Leaderboard anlegen - mit eigenem
+        Namen, wahlweise Team- oder Einzelspieler-Wertung. Erscheint
+        automatisch in der Ansichten-Palette bei den Bildschirmen.
+      </p>
+
+      <div class="row">
+        <input class="grow" id="board-name" type="text" placeholder="Name des Spiels" maxlength="60">
+      </div>
+      <div class="two-col">
+        <div class="field">
+          <label for="board-kind">Typ</label>
+          <select id="board-kind">
+            <option value="score">Rangliste (Sieg/Niederlage)</option>
+            <option value="race">Rennen (Zeit-Uhren)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="board-mode">Modus</label>
+          <select id="board-mode">
+            <option value="teams">Teams</option>
+            <option value="solo">Einzelspieler</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button class="primary" id="add-board" type="button">Leaderboard erstellen</button>
+      </div>
+
+      <h3>Bestehende Leaderboards <span class="hint" id="board-count"></span></h3>
+      <div class="list" id="boards"></div>
+      <p class="empty" id="boards-empty">Noch keine eigenen Leaderboards.</p>
+    </section>
+
     <!-- ------------------------------------------------------ Bildschirme -->
     <section class="panel">
       <h2>Bildschirme</h2>

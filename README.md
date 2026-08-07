@@ -9,8 +9,12 @@ Raspberry Pi am Fernseher oder Beamer — im orangen Cyberpunk-Look.
 * **Smash Bros**: Rangliste nach Siegen, dazu Niederlagen und Siegquote.
 * **Gäste melden sich per QR-Code selbst an** — Name eintragen, Team wählen. Die Anmeldung
   legt sie zugleich als Smash-Spieler an.
-* **Mehrere Bildschirme**, jeder unter eigener Adresse. Was welcher zeigt, entscheidest du
-  im Admin per Ziehen — mit Maus oder Finger.
+* **Eigene Leaderboards**: im Admin beliebig viele weitere Spiele anlegen — mit eigenem
+  Namen, wahlweise als Zeitrennen oder Sieg/Niederlage-Rangliste, mit Teams oder
+  Einzelspielern.
+* **Mehrere Bildschirme**, jeder unter eigener Adresse. Was welcher zeigt — SOS, Smash,
+  ein eigenes Leaderboard oder eine der anderen Seiten — entscheidest du im Admin per
+  Ziehen — mit Maus oder Finger.
 * **Lüfterkurve** für den Pi, plus Schalter für dauerhafte Volllast.
 
 Alles mit **Python aus der Standardbibliothek**: kein `pip`, kein `npm`, kein Build.
@@ -91,6 +95,7 @@ angezeigt**. Ändern: `python3 leaderboard.py --data ./data --set-password`
 | `/info` | Info-Tafel — WLAN, Ablauf, Regeln; Text im Admin bearbeitbar |
 | `/seiten` | Übersicht über alle Seiten |
 | `/screen/<name>` | gesteuerter Bildschirm (siehe unten) |
+| `/board/<id>` | ein selbst angelegtes Leaderboard (siehe „Eigene Leaderboards") |
 | `/admin` | Steuerung, Passwort nötig |
 
 ---
@@ -129,6 +134,30 @@ Eintrag ändern — keine Zeiten, keine Siege, keine Bildschirme.
 Match eintragen: Sieger und Verlierer wählen, ein Klick setzt beides. Einzelne
 `+1`/`−1`-Knöpfe gibt es für Korrekturen. Über die zwei kleinen Team-Knöpfe lässt sich
 jeder Spieler einem Team zuordnen (nochmal antippen löst die Zuordnung wieder).
+
+### Eigene Leaderboards
+
+Im Admin unter *Eigene Leaderboards* lässt sich für **jedes weitere Spiel** ein eigenes
+Leaderboard anlegen — SOS und Smash Bros bleiben davon unberührt und sind immer da.
+
+1. **Name des Spiels** eintragen, z. B. „Mario Kart" oder „Schach".
+2. **Typ** wählen:
+   * **Rennen (Zeit-Uhren)** — genau wie SOS: zwei Teams, Level mit zwei gleichzeitig
+     laufenden Uhren.
+   * **Rangliste (Sieg/Niederlage)** — genau wie Smash: Teilnehmer mit Siegen, Niederlagen
+     und Siegquote.
+3. **Modus** wählen: **Teams** oder **Einzelspieler**. Ein Zeitrennen braucht zwei
+   vergleichbare Bahnen und ist deshalb immer im Team-Modus.
+4. **„Leaderboard erstellen"** — die Karte erscheint sofort oben in der Liste und wird
+   genauso bedient wie SOS bzw. Smash: Level starten/stoppen/korrigieren bzw. Teilnehmer
+   hinzufügen und Punkte vergeben.
+
+Jedes eigene Leaderboard bekommt automatisch eine eigene Seite (**„Ansehen ↗"** öffnet sie)
+und taucht in der Ansichten-Palette bei *Bildschirme* auf — einem Fernseher zuweisen
+funktioniert genauso wie bei den fest eingebauten Ansichten. Über **„Löschen"** verschwindet
+ein Leaderboard wieder vollständig (Bildschirme, die es gerade zeigten, fallen auf das
+Haupt-Leaderboard zurück); **„Level leeren"** bzw. **„Punkte auf 0"** setzt nur den Inhalt
+dieses einen Leaderboards zurück, ohne die anderen zu berühren.
 
 ### Bildschirme steuern
 
@@ -224,7 +253,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 178 Tests, ~7 s
+python3 -m unittest discover -s tests      # 202 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```
