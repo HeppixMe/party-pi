@@ -33,5 +33,7 @@ Nichts wird aufgenommen oder verschickt: das Mikrofonsignal verlässt nie den
 Browser. `F` schaltet Vollbild um (praktisch für Fernseher/Beamer),
 Leertaste pausiert.
 
-Beide Seiten nutzen dieselbe Farbpalette (Orange/Cyan) wie das
-Cyberpunk-Theme der Pi-Version.
+Bewusst **einfarbig Orange** gehalten (nur die Helligkeit variiert mit der
+Musik) — Cyan ist im Cyberpunk-Theme der Pi-Version die Farbe von Team 2 und
+gehört nicht auf eine Seite ohne Teams. Das Leaderboard daneben nutzt
+weiterhin Orange/Cyan für Team 1/Team 2, wie auf dem Pi.

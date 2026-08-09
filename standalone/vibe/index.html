@@ -11,13 +11,15 @@
  * Abhaengigkeiten. Reagiert per Mikrofon auf die Musik im Raum (Web Audio
  * API); ohne Mikrofonzugriff laeuft stattdessen eine ruhige, zeitgesteuerte
  * Animation - die Seite haengt also nie fest. Gedacht als Deko-Bildschirm
- * fuer Pausen zwischen den Spielen, Farben passend zum Cyberpunk-Theme der
- * Pi-Version (party-pi/static/theme.css).
+ * fuer Pausen zwischen den Spielen. Bewusst einfarbig Orange, wie die
+ * Leitfarbe des Cyberpunk-Themes der Pi-Version (party-pi/static/theme.css) -
+ * Cyan ist dort nur die Farbe von Team 2 und gehoert nicht auf eine Seite
+ * ohne Teams.
  */
 :root {
   --bg: #0a0705;
   --team-a: #ff7a18;
-  --team-b: #00e5ff;
+  --accent-2: #ffb020;
   --muted: #a87b58;
   --text: #ffe8d2;
   --mono: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", ui-monospace, "Courier New", monospace;
@@ -63,7 +65,7 @@ button.alt:hover { background: var(--muted); color: #180a00; }
 }
 body.show-hud .hud { opacity: 1; }
 .hud .dot { width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--muted); }
-.hud .dot.live { background: var(--team-b); box-shadow: 0 0 0.6em var(--team-b); }
+.hud .dot.live { background: var(--accent-2); box-shadow: 0 0 0.6em var(--accent-2); }
 
 .controls {
   position: fixed; right: 1rem; bottom: 1rem;
@@ -118,11 +120,10 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
-// -- Farbverlauf Orange -> Cyan, wie beim Pi-Leaderboard (Team 1 / Team 2) --
-// Ueber den Farbton (HSL) statt direkt in RGB gemischt: eine geradlinige
-// RGB-Mischung von Orange und Cyan landet in der Mitte bei einem matschigen
-// Grau, weil sich die Kanaele gegenseitig aufheben. Der Umweg ueber HSL
-// bleibt durchgehend leuchtend.
+// -- Nur Orange: jede Farbe ist derselbe Farbton, nur die Helligkeit
+// wandert mit Energie bzw. pro Partikel zwischen Glutorange und hellem
+// Bernstein. Ueber HSL statt direkt in RGB gemischt, weil sich damit die
+// Helligkeit sauber regeln laesst, ohne den Farbton zu verschieben.
 function hslToRgb(h, s, l) {
   const hue = ((h % 360) + 360) % 360 / 360;
   const a = s * Math.min(l, 1 - l);
@@ -133,12 +134,12 @@ function hslToRgb(h, s, l) {
   return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
 }
 
-const HUE_A = 24;  // Orange, wie --team-a
-const HUE_B = 189; // Cyan, wie --team-b
+const HUE_ORANGE = 24; // wie --team-a
 
 function mixColor(t, alpha = 1) {
   const clamped = Math.max(0, Math.min(1, t));
-  const [r, g, b] = hslToRgb(HUE_A + (HUE_B - HUE_A) * clamped, 1, 0.55);
+  const lightness = 0.28 + clamped * 0.37; // dunkles Glutorange -> helles Bernstein
+  const [r, g, b] = hslToRgb(HUE_ORANGE, 1, lightness);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
