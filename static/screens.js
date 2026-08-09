@@ -215,18 +215,84 @@ export function renderScreens(container, screens, views, now, handlers) {
     select.addEventListener('click', (event) => event.stopPropagation());
 
     current.append('zeigt: ', select);
+    current.hidden = Boolean(screen.split);
     card.append(left, right, current);
+    card.append(renderSplitControls(screen, views, handlers));
 
-    // Antipp-Weg: erst Ansicht antippen, dann hier tippen.
+    // Antipp-Weg: erst Ansicht antippen, dann hier tippen. Ergibt bei einem
+    // geteilten Bildschirm keinen Sinn (welche Haelfte waere gemeint?) -
+    // deshalb nur, solange nicht geteilt.
     card.addEventListener('click', (event) => {
-      if (event.target.closest('button')) return;
-      if (!picked) return;
+      if (event.target.closest('button, select, .screen-split')) return;
+      if (!picked || screen.split) return;
       handlers.assign(screen.id, picked.view);
       setPicked(null);
     });
 
     container.append(card);
   }
+}
+
+/**
+ * Umschalter "Bildschirm teilen" plus zwei Auswahllisten fuer links/rechts -
+ * direkt an der Bildschirm-Kachel, kein eigener Bereich dafuer. Ersetzt bei
+ * einem geteilten Bildschirm die einzelne "zeigt:"-Auswahl oben.
+ */
+function renderSplitControls(screen, views, handlers) {
+  const wrap = document.createElement('div');
+  wrap.className = 'screen-split';
+
+  const toggleRow = document.createElement('label');
+  toggleRow.className = 'screen-split-toggle';
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  toggle.checked = Boolean(screen.split);
+  const toggleText = document.createElement('span');
+  toggleText.textContent = 'Bildschirm teilen';
+  toggleRow.append(toggle, toggleText);
+  wrap.append(toggleRow);
+
+  const sidesRow = document.createElement('div');
+  sidesRow.className = 'screen-split-sides';
+  sidesRow.hidden = !screen.split;
+
+  const buildSide = (label, current) => {
+    const field = document.createElement('div');
+    field.className = 'field';
+    const fieldLabel = document.createElement('label');
+    fieldLabel.textContent = label;
+    const select = document.createElement('select');
+    for (const view of views) {
+      const option = document.createElement('option');
+      option.value = view.path;
+      option.textContent = view.label;
+      if (view.path === current) option.selected = true;
+      select.append(option);
+    }
+    field.append(fieldLabel, select);
+    return { field, select };
+  };
+
+  const leftSide = buildSide('Links', screen.split?.left ?? screen.view);
+  const rightSide = buildSide('Rechts', screen.split?.right ?? (views[1]?.path || views[0]?.path || '/'));
+  sidesRow.append(leftSide.field, rightSide.field);
+  wrap.append(sidesRow);
+
+  const saveSides = () => handlers.setSplit(screen.id, leftSide.select.value, rightSide.select.value);
+  leftSide.select.addEventListener('change', saveSides);
+  rightSide.select.addEventListener('change', saveSides);
+
+  toggle.addEventListener('change', () => {
+    if (toggle.checked) {
+      sidesRow.hidden = false;
+      saveSides();
+    } else {
+      sidesRow.hidden = true;
+      handlers.clearSplit(screen.id);
+    }
+  });
+
+  return wrap;
 }
 
 export function pickedView() {

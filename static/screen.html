@@ -23,6 +23,26 @@
     }
     #frame.fading { opacity: 0; }
 
+    /* Geteilter Bildschirm: zwei Ansichten nebeneinander statt einer. */
+    #halves {
+      position: fixed;
+      inset: 0;
+      display: flex;
+    }
+    #halves iframe {
+      flex: 1 1 50%;
+      width: 50%;
+      height: 100%;
+      border: 0;
+      background: var(--bg);
+    }
+    #halves .divider {
+      flex: 0 0 auto;
+      width: 2px;
+      background: var(--line-hot);
+      box-shadow: 0 0 10px var(--accent);
+    }
+
     #idle {
       position: fixed;
       inset: 0;
@@ -61,6 +81,12 @@
 <body>
   <iframe id="frame" title="Zugewiesene Ansicht" hidden
           allow="microphone; fullscreen; autoplay" allowfullscreen></iframe>
+
+  <div id="halves" hidden>
+    <iframe id="frame-left" title="Linke Hälfte" allow="microphone; fullscreen; autoplay" allowfullscreen></iframe>
+    <div class="divider"></div>
+    <iframe id="frame-right" title="Rechte Hälfte" allow="microphone; fullscreen; autoplay" allowfullscreen></iframe>
+  </div>
 
   <div id="idle">
     <div class="label" id="name">…</div>

@@ -199,39 +199,12 @@
       <div class="views" id="views"></div>
 
       <h3>Angemeldete Bildschirme <span class="hint" id="screen-count"></span></h3>
+      <p class="hint" style="margin-top:0">
+        „Bildschirm teilen“ bei einer Kachel zeigt links eine Ansicht, rechts
+        eine andere - z.B. Leaderboard und Info-Tafel nebeneinander.
+      </p>
       <div class="screens" id="screens"></div>
       <p class="empty" id="screens-empty">Noch kein Bildschirm angemeldet.</p>
-    </section>
-
-    <!-- ------------------------------------------------ Bildschirm teilen -->
-    <section class="panel">
-      <h2>Bildschirm teilen</h2>
-      <p class="hint" style="margin-top:0">
-        Zeigt links eine Ansicht, rechts eine andere - z.B. Leaderboard und
-        Info-Tafel nebeneinander. Erscheint danach als eigene Ansicht bei den
-        Bildschirmen oben.
-      </p>
-
-      <div class="row">
-        <input class="grow" id="split-name" type="text" placeholder="Name, z. B. „Leaderboard + Info“" maxlength="60">
-      </div>
-      <div class="two-col">
-        <div class="field">
-          <label for="split-left">Links</label>
-          <select id="split-left"></select>
-        </div>
-        <div class="field">
-          <label for="split-right">Rechts</label>
-          <select id="split-right"></select>
-        </div>
-      </div>
-      <div class="row">
-        <button class="primary" id="add-split" type="button">Geteilten Bildschirm erstellen</button>
-      </div>
-
-      <h3>Bestehende geteilte Bildschirme <span class="hint" id="split-count"></span></h3>
-      <div class="list" id="splits"></div>
-      <p class="empty" id="splits-empty">Noch keine geteilten Bildschirme.</p>
     </section>
 
     <!-- ----------------------------------------------- Anzeige, Pi, Info -->

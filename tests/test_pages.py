@@ -391,98 +391,75 @@ class BoardsPageTest(ServerTestCase):
         self.assertIn("schon", body["error"])
 
 
-class SplitsPageTest(ServerTestCase):
-    """Geteilte Bildschirme (zwei Ansichten nebeneinander) ueber HTTP."""
+class ScreenSplitTest(ServerTestCase):
+    """Geteilte Bildschirme (zwei Ansichten nebeneinander) - direkt am
+    Bildschirm gespeichert (screen.split), keine eigene Sammlung/Seite."""
 
-    def create(self, name="Split", left="/", right="/qr"):
-        status, body, _type = self.request(
-            "POST", "/api/splits/create", {"name": name, "left": left, "right": right}
-        )
-        self.assertEqual(status, 200, body)
-        return body["split"]
-
-    def test_split_page_is_public_and_reachable_even_without_a_valid_id(self):
-        split = self.create()
-        for path in (f"/split/{split['id']}", "/split/gibtsnicht"):
-            status, body, content_type = self.request("GET", path)
-            self.assertEqual(status, 200, path)
-            self.assertIn("text/html", content_type)
-            self.assertIn(b"</html>", body)
-
-    def test_created_split_shows_up_in_state_and_view_list(self):
-        split = self.create("Leaderboard + QR", "/", "/qr")
-        _status, payload, _type = self.request("GET", "/api/state")
-        names = [s["name"] for s in payload["state"]["splits"]]
-        self.assertIn("Leaderboard + QR", names)
-        paths = [v["path"] for v in payload["views"]]
-        self.assertIn(f"/split/{split['id']}", paths)
-
-    def test_split_can_be_assigned_to_a_screen(self):
-        split = self.create()
+    def test_split_screen_and_read_it_back(self):
         self.request("POST", "/api/screens/hello", {"id": "tv"})
         status, body, _type = self.request(
-            "POST", "/api/screens/assign", {"screenId": "tv", "view": f"/split/{split['id']}"}
+            "POST", "/api/screens/split", {"screenId": "tv", "left": "/", "right": "/qr"}
         )
-        self.assertEqual(status, 200)
-        self.assertEqual(body["screen"]["view"], f"/split/{split['id']}")
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["screen"]["split"], {"left": "/", "right": "/qr"})
 
-    def test_rename_and_change_sides_and_delete(self):
-        split = self.create("Alt")
-        self.request("POST", "/api/splits/rename", {"splitId": split["id"], "name": "Neu"})
-        self.request("POST", "/api/splits/sides", {"splitId": split["id"], "left": "/teams", "right": "/info"})
         _status, payload, _type = self.request("GET", "/api/state")
-        stored = payload["state"]["splits"][0]
-        self.assertEqual(stored["name"], "Neu")
-        self.assertEqual(stored["left"], "/teams")
-        self.assertEqual(stored["right"], "/info")
+        screen = payload["state"]["screens"][0]
+        self.assertEqual(screen["split"], {"left": "/", "right": "/qr"})
 
-        status, _body, _type = self.request("POST", "/api/splits/delete", {"splitId": split["id"]})
-        self.assertEqual(status, 200)
+    def test_clearing_the_split_falls_back_to_the_normal_view(self):
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        self.request("POST", "/api/screens/split", {"screenId": "tv", "left": "/", "right": "/qr"})
+        status, body, _type = self.request("POST", "/api/screens/split/clear", {"screenId": "tv"})
+        self.assertEqual(status, 200, body)
         _status, payload, _type = self.request("GET", "/api/state")
-        self.assertEqual(payload["state"]["splits"], [])
+        self.assertIsNone(payload["state"]["screens"][0]["split"])
 
-    def test_a_split_cannot_show_another_split(self):
-        first = self.create("Erster")
+    def test_assigning_a_normal_view_exits_split_mode(self):
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        self.request("POST", "/api/screens/split", {"screenId": "tv", "left": "/", "right": "/qr"})
+        self.request("POST", "/api/screens/assign", {"screenId": "tv", "view": "/teams"})
+        _status, payload, _type = self.request("GET", "/api/state")
+        screen = payload["state"]["screens"][0]
+        self.assertIsNone(screen["split"])
+        self.assertEqual(screen["view"], "/teams")
+
+    def test_a_side_can_show_an_own_board(self):
         status, body, _type = self.request(
-            "POST", "/api/splits/create",
-            {"name": "Zweiter", "left": f"/split/{first['id']}", "right": "/"},
+            "POST", "/api/boards/create", {"name": "Schach", "kind": "score", "mode": "solo"}
+        )
+        board = body["board"]
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        status, body, _type = self.request(
+            "POST", "/api/screens/split", {"screenId": "tv", "left": f"/board/{board['id']}", "right": "/"}
+        )
+        self.assertEqual(status, 200, body)
+
+    def test_a_side_rejects_an_unknown_board(self):
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        status, body, _type = self.request(
+            "POST", "/api/screens/split", {"screenId": "tv", "left": "/board/gibtsnicht", "right": "/"}
         )
         self.assertEqual(status, 400, body)
 
-    def test_a_split_cannot_show_an_unknown_board(self):
-        status, body, _type = self.request(
-            "POST", "/api/splits/create",
-            {"name": "Kaputt", "left": "/board/gibtsnicht", "right": "/"},
+    def test_splitting_an_unknown_screen_is_a_404(self):
+        status, _body, _type = self.request(
+            "POST", "/api/screens/split", {"screenId": "gibtsnicht", "left": "/", "right": "/qr"}
         )
-        self.assertEqual(status, 400, body)
+        self.assertEqual(status, 404)
 
     def test_deleting_a_board_frees_split_sides_showing_it(self):
         status, body, _type = self.request(
             "POST", "/api/boards/create", {"name": "Schach", "kind": "score", "mode": "solo"}
         )
         board = body["board"]
-        split = self.create("Mit Board", f"/board/{board['id']}", "/")
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        self.request(
+            "POST", "/api/screens/split", {"screenId": "tv", "left": f"/board/{board['id']}", "right": "/"}
+        )
         self.request("POST", "/api/boards/delete", {"boardId": board["id"]})
         _status, payload, _type = self.request("GET", "/api/state")
-        stored = next(s for s in payload["state"]["splits"] if s["id"] == split["id"])
-        self.assertEqual(stored["left"], "/")
-
-    def test_deleting_a_split_frees_the_screens_showing_it(self):
-        split = self.create()
-        self.request("POST", "/api/screens/hello", {"id": "tv"})
-        self.request("POST", "/api/screens/assign", {"screenId": "tv", "view": f"/split/{split['id']}"})
-        self.request("POST", "/api/splits/delete", {"splitId": split["id"]})
-        _status, payload, _type = self.request("GET", "/api/state")
-        self.assertEqual(payload["state"]["screens"][0]["view"], "/")
-
-    def test_split_limit_gives_a_clean_error(self):
-        for index in range(lb.MAX_SPLITS):
-            self.create(f"Split {index}")
-        status, body, _type = self.request(
-            "POST", "/api/splits/create", {"name": "Zu viel", "left": "/", "right": "/qr"}
-        )
-        self.assertEqual(status, 400)
-        self.assertIn("schon", body["error"])
+        self.assertEqual(payload["state"]["screens"][0]["split"]["left"], "/")
 
 
 class ShortcutsPageTest(ServerTestCase):

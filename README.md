@@ -123,7 +123,6 @@ oben, der genau das per Doppelklick für Windows anbietet.
 | `/seiten` | Übersicht über alle Seiten |
 | `/screen/<name>` | gesteuerter Bildschirm (siehe unten) |
 | `/board/<id>` | ein selbst angelegtes Leaderboard (siehe „Eigene Leaderboards") |
-| `/split/<id>` | ein geteilter Bildschirm, zwei Ansichten nebeneinander (siehe „Bildschirme steuern") |
 | `/admin` | Steuerung — kein Passwort nötig |
 | `/kurzbefehle` | Kurzbefehle zusammenstecken (siehe unten) |
 | `/fernbedienung` | gespeicherte Kurzbefehle als große Knöpfe antippen |
@@ -232,13 +231,14 @@ Der Wechsel ist bei allen drei Wegen sofort da. Solange nichts zugewiesen ist, z
 Bildschirm seinen eigenen Namen groß an — so weißt du, welche Kachel zu welchem Gerät
 gehört. Kacheln ohne Lebenszeichen werden nach zwei Minuten als „offline" markiert.
 
-**Bildschirm teilen**: unter *Bildschirm teilen* im Admin einen geteilten Bildschirm
-anlegen — Name, eine Ansicht links, eine Ansicht rechts (z. B. Leaderboard links, Info-Tafel
-rechts). Er erscheint danach wie ein normales eigenes Leaderboard in der Ansichten-Palette
-und lässt sich genauso einem Bildschirm zuweisen. Eine Hälfte darf alles zeigen, was auch
-ein normaler Bildschirm zeigen könnte, nur keinen weiteren geteilten Bildschirm. Wird ein
-Leaderboard gelöscht, das gerade eine Hälfte belegte, springt diese Hälfte automatisch auf
-das Haupt-Leaderboard zurück.
+**Bildschirm teilen**: direkt an der Bildschirm-Kachel, kein eigener Bereich dafür.
+„Bildschirm teilen“ ankreuzen — darunter erscheinen zwei Auswahllisten, links und rechts,
+z. B. Leaderboard links, Info-Tafel rechts. Der Wechsel ist sofort da, genau wie bei der
+einzelnen Ansicht. Eine Hälfte darf alles zeigen, was auch ein normaler Bildschirm zeigen
+könnte, nur keinen weiteren geteilten Bildschirm. Eine einzelne Ansicht zuweisen (ziehen,
+antippen oder aus der Liste wählen) beendet den Split wieder. Wird ein Leaderboard gelöscht,
+das gerade eine Hälfte belegte, springt diese Hälfte automatisch auf das Haupt-Leaderboard
+zurück.
 
 **Vibe**: eine Stimmungs-/Deko-Ansicht für die Pause zwischen zwei Runden, unter `/vibe` und
 in der Ansichten-Palette wählbar. Erkennt beim Laden von selbst, ob ein Mikrofon
@@ -378,7 +378,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 240 Tests, ~10 s
+python3 -m unittest discover -s tests      # 238 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

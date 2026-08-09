@@ -75,7 +75,6 @@ MAX_SCREENS = 20
 MAX_BOARDS = 16
 MAX_SHORTCUTS = 30
 MAX_STEPS_PER_SHORTCUT = 40
-MAX_SPLITS = 16
 SCREEN_OFFLINE_AFTER = 120_000  # ms ohne Lebenszeichen -> als offline anzeigen
 
 DEFAULT_INFO_TEXT = (
@@ -102,26 +101,29 @@ SSE_HEARTBEAT = 15.0
 
 def _valid_view(state: dict, view) -> bool:
     """Eine Ansicht ist gueltig, wenn sie fest verdrahtet ist oder ein
-    bestehendes eigenes Leaderboard bzw. einen geteilten Bildschirm meint."""
+    bestehendes eigenes Leaderboard meint. Gilt auch fuer jede Haelfte eines
+    geteilten Bildschirms (siehe op_set_screen_split) - eine Haelfte darf
+    alles zeigen, was auch ein normaler Bildschirm zeigen kann."""
     if view in VIEW_PATHS:
         return True
     if isinstance(view, str) and view.startswith("/mitmachen/"):
         return view[len("/mitmachen/"):] in TEAM_IDS
     if isinstance(view, str) and view.startswith("/board/"):
         return find_board(state, view[len("/board/"):]) is not None
-    if isinstance(view, str) and view.startswith("/split/"):
-        return find_split(state, view[len("/split/"):]) is not None
     return False
 
 
-def _valid_split_side(state: dict, view) -> bool:
-    """Eine Haelfte eines geteilten Bildschirms darf alles zeigen, was auch
-    ein normaler Bildschirm zeigen kann - nur keinen weiteren geteilten
-    Bildschirm, sonst koennten sich Splits gegenseitig oder sich selbst
-    einbetten."""
-    if isinstance(view, str) and view.startswith("/split/"):
-        return False
-    return _valid_view(state, view)
+def _clamp_screen_split(state: dict, raw) -> dict | None:
+    """Ein Bildschirm kann in der Mitte geteilt eine Ansicht links und eine
+    andere rechts zeigen - direkt am Bildschirm gespeichert statt als eigene
+    waehlbare Ansicht, da es dafuer keinen sinnvollen Zweitgebrauch gibt.
+    Ungueltige oder unvollstaendige Angaben werden verworfen (kein Split)."""
+    if not isinstance(raw, dict):
+        return None
+    left, right = raw.get("left"), raw.get("right")
+    if not _valid_view(state, left) or not _valid_view(state, right):
+        return None
+    return {"left": left, "right": right}
 
 
 def _valid_display_active(state: dict, active) -> bool:
@@ -242,9 +244,6 @@ def default_state() -> dict:
         # Kurzbefehle: gespeicherte Bausteinfolgen, jeweils per GET /run/<id>
         # ausloesbar (Lesezeichen, Handy-Homescreen, Stream Deck, ...).
         "shortcuts": [],
-        # Geteilte Bildschirme: eine Ansicht links, eine rechts, als eigene
-        # waehlbare Ansicht "/split/<id>" in der Bildschirm-Palette.
-        "splits": [],
     }
 
 
@@ -562,25 +561,6 @@ def migrate_state(raw) -> dict:
     if isinstance(display, dict) and _valid_display_active(state, display.get("active")):
         state["display"]["active"] = display["active"]
 
-    # Ebenfalls erst nach den Boards, aber vor den Bildschirmen (die pruefen
-    # "/split/<id>" gegen state["splits"]).
-    splits = raw.get("splits")
-    if isinstance(splits, list):
-        for stored in splits:
-            if not isinstance(stored, dict):
-                continue
-            name = clamp_name(stored.get("name"), "Geteilter Bildschirm", limit=60)
-            left = stored.get("left")
-            right = stored.get("right")
-            state["splits"].append(
-                {
-                    "id": stored.get("id") or new_id(),
-                    "name": name,
-                    "left": left if _valid_split_side(state, left) else "/",
-                    "right": right if _valid_split_side(state, right) else "/",
-                }
-            )
-
     screens = raw.get("screens")
     if isinstance(screens, list):
         for stored in screens:
@@ -596,6 +576,7 @@ def migrate_state(raw) -> dict:
                     "name": clamp_name(stored.get("name"), screen_id, limit=40),
                     "view": view if _valid_view(state, view) else "/",
                     "seenAt": as_int(stored.get("seenAt"), 0),
+                    "split": _clamp_screen_split(state, stored.get("split")),
                 }
             )
 
@@ -673,9 +654,6 @@ class Store:
         for board in self.state["boards"]:
             icon = "\U0001F3C1" if board["kind"] == "race" else "\U0001F3C6"
             views.append({"path": f"/board/{board['id']}", "label": f"{icon} {board['name']}"})
-        # Dasselbe fuer geteilte Bildschirme.
-        for split in self.state["splits"]:
-            views.append({"path": f"/split/{split['id']}", "label": f"◧ {split['name']}"})
         body = {
             "state": self.state,
             "standings": compute_standings(self.state, now),
@@ -959,7 +937,7 @@ def op_touch_screen(state: dict, screen_id: str, now: int) -> dict:
     if screen is None:
         if len(state["screens"]) >= MAX_SCREENS:
             raise ValueError(f"Es sind schon {MAX_SCREENS} Bildschirme angemeldet")
-        screen = {"id": screen_id, "name": screen_id, "view": "/", "seenAt": now}
+        screen = {"id": screen_id, "name": screen_id, "view": "/", "seenAt": now, "split": None}
         state["screens"].append(screen)
     else:
         screen["seenAt"] = now
@@ -973,6 +951,30 @@ def op_assign_screen(state: dict, screen_id, view) -> dict:
     if not _valid_view(state, view):
         raise ValueError("Unbekannte Ansicht")
     screen["view"] = view
+    # Eine einzelne Ansicht zuweisen heisst: nicht mehr geteilt.
+    screen["split"] = None
+    return screen
+
+
+def op_set_screen_split(state: dict, screen_id, left, right) -> dict:
+    """Bildschirm in der Mitte teilen: links eine Ansicht, rechts eine
+    andere. Ersetzt die einzelne Ansicht, bis der Split wieder aufgehoben
+    wird (op_clear_screen_split) oder eine neue einzelne Ansicht zugewiesen
+    wird (op_assign_screen)."""
+    screen = find_screen(state, screen_id)
+    if screen is None:
+        raise KeyError("Bildschirm unbekannt")
+    if not _valid_view(state, left) or not _valid_view(state, right):
+        raise ValueError("Unbekannte Ansicht fuer eine Haelfte")
+    screen["split"] = {"left": left, "right": right}
+    return screen
+
+
+def op_clear_screen_split(state: dict, screen_id) -> dict:
+    screen = find_screen(state, screen_id)
+    if screen is None:
+        raise KeyError("Bildschirm unbekannt")
+    screen["split"] = None
     return screen
 
 
@@ -1028,11 +1030,13 @@ def op_delete_board(state: dict, board_id) -> None:
         state["display"]["active"] = "all"
     # ... und fuer geteilte Bildschirme: eine Haelfte, die dieses Leaderboard
     # zeigte, faellt auf das Haupt-Leaderboard zurueck.
-    for split in state["splits"]:
-        if split["left"] == view:
-            split["left"] = "/"
-        if split["right"] == view:
-            split["right"] = "/"
+    for screen in state["screens"]:
+        if not screen["split"]:
+            continue
+        if screen["split"]["left"] == view:
+            screen["split"]["left"] = "/"
+        if screen["split"]["right"] == view:
+            screen["split"]["right"] = "/"
 
 
 def op_set_board_team_names(state: dict, board_id, names: dict) -> None:
@@ -1205,71 +1209,6 @@ def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> Non
     if team_id is not None and team_id not in TEAM_IDS:
         raise ValueError("Unbekanntes Team")
     entrant["teamId"] = team_id
-
-
-# -- Geteilte Bildschirme -----------------------------------------------------
-# Ein Bildschirm, der in der Mitte geteilt eine Ansicht links und eine
-# andere rechts zeigt - z.B. Leaderboard links, Info-Tafel rechts. Wie bei
-# den eigenen Leaderboards bekommt jeder Split eine Id und taucht als eigene
-# waehlbare Ansicht "/split/<id>" in der Bildschirm-Palette auf.
-def new_split(name) -> dict:
-    return {
-        "id": new_id(),
-        "name": clamp_name(name, "Geteilter Bildschirm", limit=60),
-        "left": "/",
-        "right": "/",
-    }
-
-
-def find_split(state: dict, split_id) -> dict | None:
-    for split in state["splits"]:
-        if split["id"] == split_id:
-            return split
-    return None
-
-
-def op_create_split(state: dict, name, left, right) -> dict:
-    if len(state["splits"]) >= MAX_SPLITS:
-        raise ValueError(f"Es sind schon {MAX_SPLITS} geteilte Bildschirme angelegt")
-    if not _valid_split_side(state, left) or not _valid_split_side(state, right):
-        raise ValueError("Ungueltige Ansicht fuer eine Haelfte")
-    split = new_split(name)
-    split["left"] = left
-    split["right"] = right
-    # Neuester zuerst - im Admin sofort sichtbar, wie bei den Leaderboards.
-    state["splits"].insert(0, split)
-    return split
-
-
-def op_rename_split(state: dict, split_id, name) -> None:
-    split = find_split(state, split_id)
-    if split is None:
-        raise KeyError("Geteilter Bildschirm unbekannt")
-    split["name"] = clamp_name(name, split["name"], limit=60)
-
-
-def op_set_split_sides(state: dict, split_id, left, right) -> None:
-    split = find_split(state, split_id)
-    if split is None:
-        raise KeyError("Geteilter Bildschirm unbekannt")
-    if not _valid_split_side(state, left) or not _valid_split_side(state, right):
-        raise ValueError("Ungueltige Ansicht fuer eine Haelfte")
-    split["left"] = left
-    split["right"] = right
-
-
-def op_delete_split(state: dict, split_id) -> None:
-    splits = state["splits"]
-    remaining = [s for s in splits if s["id"] != split_id]
-    if len(remaining) == len(splits):
-        raise KeyError("Geteilter Bildschirm unbekannt")
-    state["splits"] = remaining
-    # Bildschirme, die diesen Split zeigten, fallen auf das Haupt-Leaderboard
-    # zurueck - sonst zeigen sie fuer immer eine Ansicht, die es nicht mehr gibt.
-    view = f"/split/{split_id}"
-    for screen in state["screens"]:
-        if screen["view"] == view:
-            screen["view"] = "/"
 
 
 # -- Kurzbefehle --------------------------------------------------------------
@@ -1745,10 +1684,6 @@ class Handler(BaseHTTPRequestHandler):
             # Die Kennung steckt im Pfad; board.js sucht sie sich selbst aus
             # dem Live-Zustand - unbekannte IDs zeigen dort einen Hinweis.
             return self._static("board.html")
-        if path.startswith("/split/"):
-            # Dieselbe Idee wie bei /board/<id>: split.js sucht sich die
-            # Kennung selbst aus dem Live-Zustand.
-            return self._static("split.html")
         if path.startswith("/run/"):
             # Aufrufen fuehrt den Kurzbefehl aus und leitet dann weiter -
             # kein eigener Seiteninhalt, absichtlich per einfachem GET
@@ -1983,6 +1918,16 @@ class Handler(BaseHTTPRequestHandler):
             "/api/screens/delete": lambda body, now: store.mutate(
                 lambda s: op_delete_screen(s, body.get("screenId"))
             ),
+            "/api/screens/split": lambda body, now: {
+                "screen": store.mutate(
+                    lambda s: op_set_screen_split(
+                        s, body.get("screenId"), body.get("left"), body.get("right")
+                    )
+                )
+            },
+            "/api/screens/split/clear": lambda body, now: store.mutate(
+                lambda s: op_clear_screen_split(s, body.get("screenId"))
+            ),
             "/api/display": lambda body, now: store.mutate(
                 lambda s: op_set_fx(s, body.get("fx"))
             ),
@@ -2042,25 +1987,6 @@ class Handler(BaseHTTPRequestHandler):
                 lambda s: op_board_start_active_timers(s, body.get("boardId"), now)
             ),
             "/api/boards/entrant": lambda body, now: self._board_entrant(body),
-            # -- Geteilte Bildschirme --------------------------------------------
-            "/api/splits/create": lambda body, now: {
-                "split": store.mutate(
-                    lambda s: op_create_split(
-                        s, body.get("name"), body.get("left"), body.get("right")
-                    )
-                )
-            },
-            "/api/splits/rename": lambda body, now: store.mutate(
-                lambda s: op_rename_split(s, body.get("splitId"), body.get("name"))
-            ),
-            "/api/splits/sides": lambda body, now: store.mutate(
-                lambda s: op_set_split_sides(
-                    s, body.get("splitId"), body.get("left"), body.get("right")
-                )
-            ),
-            "/api/splits/delete": lambda body, now: store.mutate(
-                lambda s: op_delete_split(s, body.get("splitId"))
-            ),
             # -- Kurzbefehle ---------------------------------------------------
             "/api/shortcuts/create": lambda body, now: {
                 "shortcut": store.mutate(

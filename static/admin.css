@@ -225,6 +225,30 @@ button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.8rem; }
 }
 .screen-card .screen-actions { display: flex; gap: 0.35rem; }
 
+.screen-split {
+  grid-column: 1 / -1;
+  border-top: 1px dashed var(--line);
+  padding-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.screen-split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.screen-split-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.screen-split-sides .field label { font-size: 0.72rem; }
+.screen-split-sides select { min-height: 34px; padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+
 /* Das Element, das beim Ziehen am Finger klebt. */
 #drag-ghost {
   position: fixed;

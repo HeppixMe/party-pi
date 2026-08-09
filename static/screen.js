@@ -1,7 +1,8 @@
 // Gesteuerter Bildschirm.
 //
 // Der Name steht im Pfad (/screen/tv). Die Seite meldet sich damit selbst an
-// und zeigt danach die Ansicht, die der Admin ihr zuweist.
+// und zeigt danach die Ansicht, die der Admin ihr zuweist - eine einzelne
+// oder, bei einem geteilten Bildschirm, zwei nebeneinander.
 
 import { api, connectEvents } from '/static/common.js';
 
@@ -16,13 +17,22 @@ const screenId = decodeURIComponent(window.location.pathname.replace(/^\/screen\
   .slice(0, 24);
 
 const frame = document.getElementById('frame');
+const halves = document.getElementById('halves');
+const frameLeft = document.getElementById('frame-left');
+const frameRight = document.getElementById('frame-right');
 const idle = document.getElementById('idle');
 const status = document.getElementById('status');
 
 document.getElementById('name').textContent = screenId || '?';
 document.title = `${screenId || 'Bildschirm'} – LAN-Party`;
 
+// Welche der drei Anzeigen gerade zu sehen ist - noetig, um beim Wechsel
+// zwischen ihnen (z.B. geteilt -> einzeln) zuverlaessig neu aufzubauen,
+// auch wenn sich die Ansicht selbst zufaellig nicht geaendert hat.
+let mode = null;       // 'idle' | 'single' | 'split'
 let currentView = null;
+let currentLeft = null;
+let currentRight = null;
 
 async function sayHello() {
   try {
@@ -34,25 +44,32 @@ async function sayHello() {
   }
 }
 
+function showIdle() {
+  if (mode === 'idle') return;
+  mode = 'idle';
+  currentView = null;
+  halves.hidden = true;
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  idle.hidden = false;
+}
+
 /**
- * Ansicht wechseln - aber nur, wenn sie sich wirklich geaendert hat.
- * Jede Zustandsaenderung im Haus schickt eine Nachricht an alle Seiten; wuerde
- * die Huelle daraufhin stur neu laden, flackerte der Fernseher den ganzen
- * Abend.
+ * Einzelne Ansicht zeigen - das iframe wird nur neu geladen, wenn sich die
+ * Ansicht wirklich geaendert hat. Jede Zustandsaenderung im Haus schickt
+ * eine Nachricht an alle Seiten; wuerde die Huelle daraufhin stur neu
+ * laden, flackerte der Fernseher den ganzen Abend.
  */
 function showView(view) {
-  if (view === currentView) return;
+  const changingMode = mode !== 'single';
+  mode = 'single';
+  halves.hidden = true;
+  idle.hidden = true;
+
+  if (view === currentView && !changingMode) return;
   currentView = view;
 
-  if (!view) {
-    frame.hidden = true;
-    frame.removeAttribute('src');
-    idle.hidden = false;
-    return;
-  }
-
-  idle.hidden = true;
-  if (frame.hidden) {
+  if (changingMode || frame.hidden) {
     frame.hidden = false;
     frame.src = view;
     return;
@@ -65,10 +82,36 @@ function showView(view) {
   }, FADE_MS);
 }
 
+/** Geteilter Bildschirm: zwei Ansichten nebeneinander, je iframe nur bei
+ * Aenderung neu geladen - derselbe Grund wie bei showView(). */
+function showSplit(left, right) {
+  const changingMode = mode !== 'split';
+  mode = 'split';
+  idle.hidden = true;
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  halves.hidden = false;
+
+  if (left !== currentLeft || changingMode) {
+    currentLeft = left;
+    frameLeft.src = left;
+  }
+  if (right !== currentRight || changingMode) {
+    currentRight = right;
+    frameRight.src = right;
+  }
+}
+
+function applyScreen(screen) {
+  if (!screen) showIdle();
+  else if (screen.split) showSplit(screen.split.left, screen.split.right);
+  else showView(screen.view);
+}
+
 connectEvents({
   onState: (payload) => {
     const screen = (payload.state?.screens || []).find((s) => s.id === screenId);
-    showView(screen ? screen.view : null);
+    applyScreen(screen);
   },
   onStatus: (online) => {
     status.textContent = online ? screenId : 'keine Verbindung';
