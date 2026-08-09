@@ -72,6 +72,8 @@ PLAYER_TTL = 48 * 3600
 MAX_PLAYERS = 100
 MAX_SCREENS = 20
 MAX_BOARDS = 16
+MAX_SHORTCUTS = 30
+MAX_STEPS_PER_SHORTCUT = 40
 SCREEN_OFFLINE_AFTER = 120_000  # ms ohne Lebenszeichen -> als offline anzeigen
 
 DEFAULT_INFO_TEXT = (
@@ -206,6 +208,9 @@ def default_state() -> dict:
         # das eingebaute S.O.S.-Rennen und die Smash-Rangliste oben bleiben
         # davon unberuehrt und sind immer da.
         "boards": [],
+        # Kurzbefehle: gespeicherte Bausteinfolgen, jeweils per GET /run/<id>
+        # ausloesbar (Lesezeichen, Handy-Homescreen, Stream Deck, ...).
+        "shortcuts": [],
     }
 
 
@@ -533,6 +538,23 @@ def migrate_state(raw) -> dict:
                     "name": clamp_name(stored.get("name"), screen_id, limit=40),
                     "view": view if _valid_view(state, view) else "/",
                     "seenAt": as_int(stored.get("seenAt"), 0),
+                }
+            )
+
+    shortcuts = raw.get("shortcuts")
+    if isinstance(shortcuts, list):
+        for stored in shortcuts:
+            if not isinstance(stored, dict):
+                continue
+            name = clamp_name(stored.get("name"))
+            if not name:
+                continue
+            state["shortcuts"].append(
+                {
+                    "id": stored.get("id") or new_id(),
+                    "name": name[:60],
+                    "createdAt": as_int(stored.get("createdAt"), 0),
+                    "steps": clamp_steps(stored.get("steps")),
                 }
             )
 
@@ -1074,6 +1096,193 @@ def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> Non
     entrant["teamId"] = team_id
 
 
+# -- Kurzbefehle --------------------------------------------------------------
+# Gespeicherte Bausteinfolgen (wie bei Scratch zusammengesteckt), jede ueber
+# eine eigene Adresse GET /run/<id> ausloesbar - als Lesezeichen, Kachel auf
+# dem Handy-Homescreen oder Knopf auf einem Stream Deck. Jeder Baustein ist
+# ein kleines dict mit "type" plus seinen eigenen Feldern; SHORTCUT_STEP_TYPES
+# haelt fest, welche Typen es gibt, damit ein kaputter/fremder Typ beim
+# Laden oder Speichern einfach verworfen wird statt den Server zu verwirren.
+SHORTCUT_STEP_TYPES = (
+    "assign_screen", "create_board", "start_level", "board_start_level",
+    "set_fx", "set_info", "reset", "board_reset",
+)
+
+
+def new_shortcut(name) -> dict:
+    return {
+        "id": new_id(),
+        "name": clamp_name(name, "Kurzbefehl", limit=60),
+        "createdAt": 0,
+        "steps": [],
+    }
+
+
+def find_shortcut(state: dict, shortcut_id) -> dict | None:
+    for shortcut in state["shortcuts"]:
+        if shortcut["id"] == shortcut_id:
+            return shortcut
+    return None
+
+
+def clamp_step(raw) -> dict | None:
+    """Einen einzelnen Baustein aus JSON saeubern. Unbekannte, kaputte oder
+    unvollstaendige Bausteine werden beim Speichern stillschweigend
+    verworfen - ein Kurzbefehl soll nie an einem einzelnen Baustein
+    haengen bleiben, weder beim Speichern noch beim Ausfuehren."""
+    if not isinstance(raw, dict):
+        return None
+    step_type = raw.get("type")
+    if step_type not in SHORTCUT_STEP_TYPES:
+        return None
+
+    if step_type == "assign_screen":
+        screen_id = clamp_screen_id(raw.get("screenId"))
+        view = raw.get("view")
+        if not screen_id or not isinstance(view, str) or not view:
+            return None
+        return {"type": step_type, "screenId": screen_id, "view": view}
+
+    if step_type == "create_board":
+        kind = raw.get("kind")
+        mode = raw.get("mode")
+        if kind not in ("race", "score") or mode not in ("teams", "solo"):
+            return None
+        return {
+            "type": step_type,
+            "name": clamp_name(raw.get("name"), "Leaderboard", limit=60),
+            "kind": kind,
+            "mode": mode,
+        }
+
+    if step_type == "start_level":
+        return {
+            "type": step_type,
+            "name": clamp_name(raw.get("name"), "", limit=60),
+            "autostart": bool(raw.get("autostart", True)),
+        }
+
+    if step_type == "board_start_level":
+        board_id = raw.get("boardId")
+        if not isinstance(board_id, str) or not board_id:
+            return None
+        return {
+            "type": step_type,
+            "boardId": board_id,
+            "name": clamp_name(raw.get("name"), "", limit=60),
+            "autostart": bool(raw.get("autostart", True)),
+        }
+
+    if step_type == "set_fx":
+        fx = raw.get("fx")
+        if fx not in ("full", "plain"):
+            return None
+        return {"type": step_type, "fx": fx}
+
+    if step_type == "set_info":
+        text = raw.get("text")
+        if not isinstance(text, str):
+            return None
+        return {"type": step_type, "text": text[:4000]}
+
+    if step_type == "reset":
+        scope = raw.get("scope")
+        if scope not in ("all", "sos", "smash", "players"):
+            return None
+        return {"type": step_type, "scope": scope}
+
+    if step_type == "board_reset":
+        board_id = raw.get("boardId")
+        if not isinstance(board_id, str) or not board_id:
+            return None
+        return {"type": step_type, "boardId": board_id}
+
+    return None
+
+
+def clamp_steps(raw) -> list:
+    if not isinstance(raw, list):
+        return []
+    cleaned = []
+    for item in raw[:MAX_STEPS_PER_SHORTCUT]:
+        step = clamp_step(item)
+        if step is not None:
+            cleaned.append(step)
+    return cleaned
+
+
+def op_create_shortcut(state: dict, name, steps, now: int) -> dict:
+    if len(state["shortcuts"]) >= MAX_SHORTCUTS:
+        raise ValueError(f"Es sind schon {MAX_SHORTCUTS} Kurzbefehle angelegt")
+    shortcut = new_shortcut(name)
+    shortcut["createdAt"] = now
+    shortcut["steps"] = clamp_steps(steps)
+    # Neuester zuerst - im Admin sofort sichtbar, wie bei den Leaderboards.
+    state["shortcuts"].insert(0, shortcut)
+    return shortcut
+
+
+def op_rename_shortcut(state: dict, shortcut_id, name) -> None:
+    shortcut = find_shortcut(state, shortcut_id)
+    if shortcut is None:
+        raise KeyError("Kurzbefehl unbekannt")
+    shortcut["name"] = clamp_name(name, shortcut["name"], limit=60)
+
+
+def op_update_shortcut_steps(state: dict, shortcut_id, steps) -> dict:
+    shortcut = find_shortcut(state, shortcut_id)
+    if shortcut is None:
+        raise KeyError("Kurzbefehl unbekannt")
+    shortcut["steps"] = clamp_steps(steps)
+    return shortcut
+
+
+def op_delete_shortcut(state: dict, shortcut_id) -> None:
+    shortcuts = state["shortcuts"]
+    remaining = [s for s in shortcuts if s["id"] != shortcut_id]
+    if len(remaining) == len(shortcuts):
+        raise KeyError("Kurzbefehl unbekannt")
+    state["shortcuts"] = remaining
+
+
+def run_shortcut_step(state: dict, step: dict, now: int) -> None:
+    """Fuehrt einen einzelnen Baustein aus. Fehler (z.B. ein inzwischen
+    geloeschter Bildschirm oder ein geloeschtes Leaderboard) werden
+    abgefangen, statt den ganzen Kurzbefehl abzubrechen - die uebrigen
+    Bausteine sollen trotzdem laufen."""
+    step_type = step.get("type")
+    try:
+        if step_type == "assign_screen":
+            op_assign_screen(state, step["screenId"], step["view"])
+        elif step_type == "create_board":
+            op_create_board(state, step.get("name"), step["kind"], step["mode"], now)
+        elif step_type == "start_level":
+            op_start_level(state, step.get("name") or None, step.get("autostart", True), now)
+        elif step_type == "board_start_level":
+            op_board_start_level(
+                state, step["boardId"], step.get("name") or None, step.get("autostart", True), now
+            )
+        elif step_type == "set_fx":
+            op_set_fx(state, step["fx"])
+        elif step_type == "set_info":
+            op_set_info(state, step.get("text", ""))
+        elif step_type == "reset":
+            op_reset(state, step["scope"])
+        elif step_type == "board_reset":
+            op_board_reset(state, step["boardId"])
+    except (KeyError, ValueError):
+        pass
+
+
+def op_run_shortcut(state: dict, shortcut_id, now: int) -> dict:
+    shortcut = find_shortcut(state, shortcut_id)
+    if shortcut is None:
+        raise KeyError("Kurzbefehl unbekannt")
+    for step in shortcut["steps"]:
+        run_shortcut_step(state, step, now)
+    return shortcut
+
+
 # ---------------------------------------------------------------------------
 # Konfiguration und Anmeldung
 # ---------------------------------------------------------------------------
@@ -1250,6 +1459,7 @@ class Handler(BaseHTTPRequestHandler):
         "/teams": "teams.html",
         "/system": "system.html",
         "/info": "info.html",
+        "/kurzbefehle": "shortcuts.html",
     }
 
     def do_GET(self):
@@ -1267,6 +1477,18 @@ class Handler(BaseHTTPRequestHandler):
             # Die Kennung steckt im Pfad; board.js sucht sie sich selbst aus
             # dem Live-Zustand - unbekannte IDs zeigen dort einen Hinweis.
             return self._static("board.html")
+        if path.startswith("/run/"):
+            # Aufrufen fuehrt den Kurzbefehl aus und leitet dann weiter -
+            # kein eigener Seiteninhalt, absichtlich per einfachem GET
+            # ausloesbar (Lesezeichen, Handy-Homescreen, Stream Deck ...).
+            # Ein unbekannter oder inzwischen geloeschter Kurzbefehl macht
+            # einfach nichts, statt einen Fehler anzuzeigen.
+            shortcut_id = path[len("/run/"):]
+            try:
+                self.store.mutate(lambda s: op_run_shortcut(s, shortcut_id, now_ms()))
+            except KeyError:
+                pass
+            return self._send(HTTPStatus.FOUND, b"", "text/plain; charset=utf-8", {"Location": "/admin"})
 
         if path == "/api/state":
             payload = json.loads(self.store.payload())
@@ -1526,6 +1748,23 @@ class Handler(BaseHTTPRequestHandler):
                 )
             ),
             "/api/boards/entrant": lambda body, now: self._board_entrant(body),
+            # -- Kurzbefehle ---------------------------------------------------
+            "/api/shortcuts/create": lambda body, now: {
+                "shortcut": store.mutate(
+                    lambda s: op_create_shortcut(s, body.get("name"), body.get("steps"), now)
+                )
+            },
+            "/api/shortcuts/rename": lambda body, now: store.mutate(
+                lambda s: op_rename_shortcut(s, body.get("shortcutId"), body.get("name"))
+            ),
+            "/api/shortcuts/steps": lambda body, now: {
+                "shortcut": store.mutate(
+                    lambda s: op_update_shortcut_steps(s, body.get("shortcutId"), body.get("steps"))
+                )
+            },
+            "/api/shortcuts/delete": lambda body, now: store.mutate(
+                lambda s: op_delete_shortcut(s, body.get("shortcutId"))
+            ),
         }
 
     def _set_fan(self, body: dict):

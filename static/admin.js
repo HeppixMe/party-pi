@@ -13,6 +13,7 @@ import {
   teamName as teamNameOf,
   timerValue,
   winRate,
+  withFocusPreserved,
 } from '/static/common.js';
 import { renderScreens, renderViews } from '/static/screens.js';
 
@@ -51,32 +52,6 @@ export function parseTime(text) {
   if (!Number.isFinite(minutes) || !Number.isFinite(hours)) return null;
   ms += minutes * 60000 + hours * 3600000;
   return ms;
-}
-
-/**
- * Der Live-Stream baut die Listen neu auf. Damit dabei nicht mitten im Tippen
- * das Feld verlorengeht, merken wir uns das fokussierte Feld ueber data-key
- * und stellen es danach wieder her - inklusive des bereits getippten Textes.
- */
-function withFocusPreserved(render) {
-  const active = document.activeElement;
-  const key = active?.dataset?.key;
-  const value = key ? active.value : null;
-  const start = key ? active.selectionStart : null;
-  const end = key ? active.selectionEnd : null;
-
-  render();
-
-  if (!key) return;
-  const restored = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
-  if (!restored) return;
-  restored.value = value;
-  restored.focus();
-  try {
-    restored.setSelectionRange(start, end);
-  } catch (err) {
-    /* Feldtypen ohne Auswahlbereich ignorieren */
-  }
 }
 
 function teamName(id) {
@@ -823,11 +798,10 @@ function renderScreenBlock(payload) {
   const views = payload.views || [];
   const screens = payload.state?.screens || [];
 
-  // Die Palette haengt nur an der Ansichtsliste - die aendert sich nie, also
-  // nur einmal aufbauen. Sonst risse jeder Zustandsschub ein laufendes Ziehen ab.
-  if (!$('views').childElementCount && views.length) {
-    renderViews($('views'), views);
-  }
+  // renderViews() baut nur neu, wenn sich die Ansichtsliste wirklich
+  // geaendert hat, und nie waehrend ein Baustein gerade gezogen wird -
+  // siehe die Erklaerung in screens.js.
+  renderViews($('views'), views);
 
   $('screens-empty').hidden = screens.length > 0;
   $('screen-count').textContent = screens.length ? `(${screens.length})` : '';

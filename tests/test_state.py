@@ -619,6 +619,141 @@ class BoardsTest(unittest.TestCase):
         self.assertEqual(state["boards"], [])
 
 
+class ShortcutsTest(unittest.TestCase):
+    """Kurzbefehle: gespeicherte Bausteinfolgen, per /run/<id> ausloesbar."""
+
+    def test_create_and_run_assigns_a_screen(self):
+        state = lb.default_state()
+        lb.op_touch_screen(state, "tv", 0)
+        steps = [{"type": "assign_screen", "screenId": "tv", "view": "/qr"}]
+        shortcut = lb.op_create_shortcut(state, "Start", steps, now=0)
+        self.assertEqual(shortcut["steps"], steps)
+
+        lb.op_run_shortcut(state, shortcut["id"], now=1000)
+        self.assertEqual(state["screens"][0]["view"], "/qr")
+
+    def test_run_creates_a_board(self):
+        state = lb.default_state()
+        steps = [{"type": "create_board", "name": "Mario Kart", "kind": "race", "mode": "solo"}]
+        shortcut = lb.op_create_shortcut(state, "Board anlegen", steps, now=0)
+        lb.op_run_shortcut(state, shortcut["id"], now=0)
+        self.assertEqual(len(state["boards"]), 1)
+        self.assertEqual(state["boards"][0]["name"], "Mario Kart")
+        # 'race' erzwingt Teams, auch wenn der Baustein 'solo' vorgab.
+        self.assertEqual(state["boards"][0]["mode"], "teams")
+
+    def test_steps_run_in_order(self):
+        state = lb.default_state()
+        steps = [
+            {"type": "set_fx", "fx": "plain"},
+            {"type": "set_fx", "fx": "full"},
+        ]
+        shortcut = lb.op_create_shortcut(state, "FX", steps, now=0)
+        lb.op_run_shortcut(state, shortcut["id"], now=0)
+        self.assertEqual(state["display"]["fx"], "full")
+
+    def test_broken_step_is_skipped_without_aborting_the_rest(self):
+        state = lb.default_state()
+        # Baustein 1 zeigt auf einen nie angemeldeten Bildschirm (schlaegt
+        # beim Ausfuehren fehl), Baustein 2 muss trotzdem laufen.
+        steps = [
+            {"type": "assign_screen", "screenId": "gibtsnicht", "view": "/qr"},
+            {"type": "set_info", "text": "trotzdem gelaufen"},
+        ]
+        shortcut = lb.op_create_shortcut(state, "Kaputt+Heil", steps, now=0)
+        lb.op_run_shortcut(state, shortcut["id"], now=0)
+        self.assertEqual(state["info"]["text"], "trotzdem gelaufen")
+
+    def test_run_unknown_shortcut_raises(self):
+        state = lb.default_state()
+        with self.assertRaises(KeyError):
+            lb.op_run_shortcut(state, "gibtsnicht", now=0)
+
+    def test_unknown_step_type_is_dropped_on_save(self):
+        state = lb.default_state()
+        steps = [{"type": "flieg_zum_mond"}, {"type": "set_fx", "fx": "plain"}]
+        shortcut = lb.op_create_shortcut(state, "Halb kaputt", steps, now=0)
+        self.assertEqual(len(shortcut["steps"]), 1)
+        self.assertEqual(shortcut["steps"][0]["type"], "set_fx")
+
+    def test_rename_update_and_delete(self):
+        state = lb.default_state()
+        shortcut = lb.op_create_shortcut(state, "Alt", [], now=0)
+        lb.op_rename_shortcut(state, shortcut["id"], "Neu")
+        self.assertEqual(state["shortcuts"][0]["name"], "Neu")
+
+        new_steps = [{"type": "reset", "scope": "all"}]
+        lb.op_update_shortcut_steps(state, shortcut["id"], new_steps)
+        self.assertEqual(state["shortcuts"][0]["steps"], new_steps)
+
+        lb.op_delete_shortcut(state, shortcut["id"])
+        self.assertEqual(state["shortcuts"], [])
+        with self.assertRaises(KeyError):
+            lb.op_delete_shortcut(state, shortcut["id"])
+
+    def test_new_shortcut_is_inserted_at_the_top(self):
+        state = lb.default_state()
+        lb.op_create_shortcut(state, "Erstes", [], now=0)
+        lb.op_create_shortcut(state, "Zweites", [], now=1)
+        self.assertEqual(state["shortcuts"][0]["name"], "Zweites")
+
+    def test_shortcut_limit_is_enforced(self):
+        state = lb.default_state()
+        for index in range(lb.MAX_SHORTCUTS):
+            lb.op_create_shortcut(state, f"Kurzbefehl {index}", [], now=0)
+        with self.assertRaises(ValueError):
+            lb.op_create_shortcut(state, "Zu viel", [], now=0)
+
+    def test_step_count_is_capped(self):
+        state = lb.default_state()
+        steps = [{"type": "set_fx", "fx": "full"} for _ in range(lb.MAX_STEPS_PER_SHORTCUT + 10)]
+        shortcut = lb.op_create_shortcut(state, "Lang", steps, now=0)
+        self.assertEqual(len(shortcut["steps"]), lb.MAX_STEPS_PER_SHORTCUT)
+
+    def test_board_steps_reference_a_board_by_id(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        steps = [
+            {"type": "board_start_level", "boardId": board["id"], "name": "Strecke 1", "autostart": True},
+        ]
+        shortcut = lb.op_create_shortcut(state, "Renn-Start", steps, now=0)
+        lb.op_run_shortcut(state, shortcut["id"], now=5000)
+        self.assertEqual(len(state["boards"][0]["levels"]), 1)
+        self.assertEqual(state["boards"][0]["levels"][0]["name"], "Strecke 1")
+
+    def test_board_reset_step(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        entrant = lb.op_board_add_entrant(state, board["id"], "Mia")
+        lb.op_board_entrant_score(state, board["id"], entrant["id"], "wins", 3)
+        shortcut = lb.op_create_shortcut(
+            state, "Reset", [{"type": "board_reset", "boardId": board["id"]}], now=0
+        )
+        lb.op_run_shortcut(state, shortcut["id"], now=0)
+        self.assertEqual(state["boards"][0]["entrants"][0]["wins"], 0)
+
+    def test_migration_round_trips_shortcuts_and_drops_garbage(self):
+        state = lb.default_state()
+        lb.op_create_shortcut(
+            state, "Party-Start",
+            [{"type": "set_fx", "fx": "plain"}, {"type": "quatsch"}],
+            now=123,
+        )
+        reloaded = lb.migrate_state(json.loads(json.dumps(state)))
+        self.assertEqual(len(reloaded["shortcuts"]), 1)
+        self.assertEqual(reloaded["shortcuts"][0]["name"], "Party-Start")
+        # Der kaputte zweite Baustein ist weg, der gueltige erste blieb.
+        self.assertEqual(len(reloaded["shortcuts"][0]["steps"]), 1)
+        self.assertEqual(reloaded["shortcuts"][0]["steps"][0]["type"], "set_fx")
+
+    def test_migration_survives_garbage_shortcuts_list(self):
+        state = lb.migrate_state({"shortcuts": "quatsch"})
+        self.assertEqual(state["shortcuts"], [])
+        state = lb.migrate_state({"shortcuts": [{"name": ""}, "quatsch", {"name": "OK", "steps": []}]})
+        self.assertEqual(len(state["shortcuts"]), 1)
+        self.assertEqual(state["shortcuts"][0]["name"], "OK")
+
+
 class AuthTest(unittest.TestCase):
     """Es gibt kein Admin-Passwort mehr - Auth signiert nur noch das
     Spieler-Cookie, damit eine zweite Anmeldung den eigenen Eintrag findet."""

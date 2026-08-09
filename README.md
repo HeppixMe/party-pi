@@ -122,6 +122,8 @@ oben, der genau das per Doppelklick für Windows anbietet.
 | `/screen/<name>` | gesteuerter Bildschirm (siehe unten) |
 | `/board/<id>` | ein selbst angelegtes Leaderboard (siehe „Eigene Leaderboards") |
 | `/admin` | Steuerung — kein Passwort nötig |
+| `/kurzbefehle` | Kurzbefehle zusammenstecken (siehe unten) |
+| `/run/<id>` | führt einen Kurzbefehl aus und leitet auf `/admin` weiter |
 
 ---
 
@@ -195,13 +197,44 @@ davon wird mit anderen Admin-Tabs geteilt.
 ### Bildschirme steuern
 
 Auf dem Gerät einmal `http://<pi>/screen/tv` öffnen — der Name ist frei wählbar. Der
-Bildschirm meldet sich selbst an und erscheint im Admin unter *Bildschirme*. Dort eine
-Ansicht auf die Kachel **ziehen** (Maus oder Finger) oder **antippen und dann die Kachel
-antippen**. Der Wechsel ist sofort da.
+Bildschirm meldet sich selbst an und erscheint im Admin unter *Bildschirme*. Eine Ansicht
+zuweisen geht auf drei Wegen:
 
-Solange nichts zugewiesen ist, zeigt der Bildschirm seinen eigenen Namen groß an — so
-weißt du, welche Kachel zu welchem Gerät gehört. Kacheln ohne Lebenszeichen werden nach
-zwei Minuten als „offline" markiert.
+* **Ziehen** (Maus oder Finger) von der Ansichten-Palette auf die Kachel,
+* **Antippen und dann die Kachel antippen** — der Weg fürs Handy ohne Ziehen,
+* oder direkt bei der Kachel aus der **Liste „zeigt:“** wählen — die zuverlässigste
+  Variante, falls sich Ziehen auf einem Gerät mal launisch anfühlt.
+
+Der Wechsel ist bei allen drei Wegen sofort da. Solange nichts zugewiesen ist, zeigt der
+Bildschirm seinen eigenen Namen groß an — so weißt du, welche Kachel zu welchem Gerät
+gehört. Kacheln ohne Lebenszeichen werden nach zwei Minuten als „offline" markiert.
+
+### Kurzbefehle
+
+Unter `/kurzbefehle` (auch von der Steuerseite aus verlinkt) lassen sich eigene
+Bausteinfolgen zusammenstecken — wie bei Scratch: Baustein aus der Palette links **in den
+Ablauf rechts ziehen oder antippen**, in beliebiger Reihenfolge, mit Pfeil-Knöpfen wieder
+umsortierbar. Verfügbare Bausteine:
+
+| Baustein | Wirkung |
+|---|---|
+| Bildschirm zuweisen | weist einer Ansicht einen Bildschirm zu |
+| Leaderboard erstellen | legt ein neues eigenes Leaderboard an |
+| SOS-Level starten | startet ein Level im eingebauten SOS-Rennen |
+| Level in eigenem Leaderboard starten | startet ein Level in einem Renn-Leaderboard |
+| Effekte umschalten | volles Programm oder schlicht |
+| Info-Tafel setzen | ersetzt den Text auf der Info-Tafel |
+| Zurücksetzen | SOS, Smash, Spieler oder alles |
+| Eigenes Leaderboard zurücksetzen | nur für ein bestimmtes Leaderboard |
+
+Nach dem Speichern bekommt jeder Kurzbefehl eine eigene Adresse (`/run/<id>`, über
+„Kopieren“ neben dem Kurzbefehl greifbar). Sie beim **Aufrufen** aus — ohne dass die Seite
+selbst irgendetwas anzeigt — und leitet danach auf `/admin` weiter. Praktisch als
+Lesezeichen, als Kachel auf dem Handy-Homescreen oder als Knopf auf einem Stream Deck:
+„Party-Start“ könnte z. B. den Beamer auf den QR-Code legen, den Fernseher aufs
+Leaderboard und in einem Rutsch ein neues Turnier-Leaderboard anlegen. Ein Baustein, der
+auf einen inzwischen entfernten Bildschirm oder ein gelöschtes Leaderboard zeigt, wird beim
+Ausführen einfach übersprungen — die übrigen Bausteine laufen trotzdem.
 
 ### Effekte und Lüfter
 
@@ -286,7 +319,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 202 Tests, ~10 s
+python3 -m unittest discover -s tests      # 215 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```
@@ -316,7 +349,7 @@ fan/fan_control.py   Lüfterdienst mit Erkennung des Ansteuerungsverfahrens
 scripts/setup.sh     Installation, Status, Deinstallation (Raspberry Pi)
 Windows-Starten.bat  Ein-Klick-Start für Windows, ohne Installation
 standalone/          zwei Seiten ganz ohne Server (Leaderboard, Ambient-Anzeige)
-tests/               Tests für Wertung, Uhren, HTTP, Seiten, Spieler-Anmeldung, QR und Lüfter
+tests/               Tests für Wertung, Uhren, HTTP, Seiten, Spieler-Anmeldung, QR, Lüfter und Kurzbefehle
 ```
 
 Der Server hält den Zustand im Speicher und schreibt ihn nach jeder Änderung atomar nach

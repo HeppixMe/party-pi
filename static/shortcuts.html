@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kurzbefehle – LAN-Party Leaderboard</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/admin.css">
+  <link rel="stylesheet" href="/static/shortcuts.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Kurzbefehle</h1>
+    <div class="topbar-actions">
+      <span class="badge" id="conn">verbinde…</span>
+      <a href="/admin"><button class="ghost small" type="button">← Steuerung</button></a>
+    </div>
+  </header>
+
+  <p class="hint" id="intro">
+    Baustein aus der Palette in den Ablauf <strong>ziehen</strong> (Maus oder Finger) oder
+    <strong>antippen</strong> - wie bei Scratch. Jeder gespeicherte Kurzbefehl bekommt eine
+    eigene Adresse, die ihn beim Aufrufen sofort ausführt und dann auf die Steuerung
+    zurückleitet - praktisch als Lesezeichen, Kachel auf dem Handy-Homescreen oder Knopf auf
+    einem Stream Deck.
+  </p>
+
+  <div class="builder">
+    <section class="panel palette-panel">
+      <h2>Bausteine</h2>
+      <div class="block-list" id="palette"></div>
+    </section>
+
+    <section class="panel sequence-panel">
+      <h2>Ablauf</h2>
+      <div class="row">
+        <input class="grow" id="shortcut-name" type="text" placeholder="Name des Kurzbefehls"
+               maxlength="60" data-key="shortcut-name">
+      </div>
+
+      <div class="sequence" id="sequence"></div>
+      <p class="empty" id="sequence-empty">Noch keine Bausteine - von links hierher ziehen oder antippen.</p>
+
+      <div class="row" style="margin-top:0.75rem">
+        <button class="primary" id="save-shortcut" type="button">Kurzbefehl speichern</button>
+        <button class="ghost" id="new-shortcut" type="button">Neu anfangen</button>
+        <span class="hint" id="editing-note"></span>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:1rem">
+    <h2>Gespeicherte Kurzbefehle <span class="hint" id="shortcut-count"></span></h2>
+    <div class="list" id="shortcuts"></div>
+    <p class="empty" id="shortcuts-empty">Noch keine Kurzbefehle gespeichert.</p>
+  </section>
+
+  <div id="toast" hidden></div>
+  <script type="module" src="/static/shortcuts.js"></script>
+</body>
+</html>

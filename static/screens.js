@@ -13,6 +13,26 @@ const OFFLINE_AFTER_MS = 120_000;
 let onAssign = () => {};
 let picked = null;             // per Antippen vorgemerkte Ansicht
 let ghost = null;
+let activeDrag = false;
+let lastViewsKey = null;
+
+/**
+ * Waehrend eines laufenden Zugs darf niemand die Kacheln unter dem Finger
+ * neu aufbauen - das war der eigentliche Grund, warum sich das Ziehen
+ * "irgendwie nicht richtig" angefuehlt hat: der Server schickt bei jeder
+ * Kleinigkeit (ein Bildschirm meldet sich, ein Gast tritt bei, ...) einen
+ * Zustandsschub an alle offenen Seiten, auch an die, auf der gerade
+ * gezogen wird. renderScreens()/renderViews() ersetzen sonst bei jedem
+ * Schub komplett den Inhalt von #screens bzw. #views per replaceChildren()
+ * - das Ziel rutscht buchstaeblich unter dem Zeiger weg, und beim
+ * Neuaufbau der Palette wuerde sogar der gerade gezogene Baustein selbst
+ * verschwinden. renderScreens/renderViews ueberspringen den Neuaufbau
+ * deshalb, solange isDragActive() wahr ist; der naechste Schub danach
+ * (z.B. durch die Zuweisung selbst ausgeloest) holt alles nach.
+ */
+export function isDragActive() {
+  return activeDrag;
+}
 
 /** Kachel unter dem Finger/Zeiger finden. */
 function screenCardAt(x, y) {
@@ -55,6 +75,7 @@ function startDrag(chip, event) {
 
     if (!dragging) {
       dragging = true;
+      activeDrag = true;
       ghost = document.createElement('div');
       ghost.id = 'drag-ghost';
       ghost.textContent = label;
@@ -73,6 +94,7 @@ function startDrag(chip, event) {
     chip.removeEventListener('pointercancel', cancel);
     removeGhost();
     clearTargets();
+    activeDrag = false;
 
     if (!dragging) {
       // Kein Ziehen, sondern ein Tippen: Ansicht vormerken.
@@ -89,6 +111,7 @@ function startDrag(chip, event) {
     chip.removeEventListener('pointercancel', cancel);
     removeGhost();
     clearTargets();
+    activeDrag = false;
   };
 
   chip.addEventListener('pointermove', move);
@@ -96,8 +119,18 @@ function startDrag(chip, event) {
   chip.addEventListener('pointercancel', cancel);
 }
 
-/** Palette der verfuegbaren Ansichten aufbauen. */
+/**
+ * Palette der verfuegbaren Ansichten aufbauen - auch fuer eigene
+ * Leaderboards, die erst nach dem ersten Aufruf dazukommen. Wird ohne
+ * inhaltliche Aenderung erneut aufgerufen (bei jedem Zustandsschub),
+ * baut aber nur dann wirklich neu, wenn sich die Liste selbst geaendert
+ * hat - unnoetiges Geflacker vermeiden, ohne neue Ansichten zu verpassen.
+ */
 export function renderViews(container, views) {
+  if (activeDrag) return;
+  const key = views.map((v) => `${v.path} ${v.label}`).join('');
+  if (key === lastViewsKey) return;
+  lastViewsKey = key;
   container.replaceChildren();
   for (const view of views) {
     const chip = document.createElement('div');
@@ -125,6 +158,7 @@ export function renderViews(container, views) {
 /** Kacheln der angemeldeten Bildschirme aufbauen. */
 export function renderScreens(container, screens, views, now, handlers) {
   onAssign = handlers.assign;
+  if (activeDrag) return;
   container.replaceChildren();
 
   const labelOf = (path) => views.find((v) => v.path === path)?.label || path;
@@ -163,8 +197,24 @@ export function renderScreens(container, screens, views, now, handlers) {
 
     const current = document.createElement('div');
     current.className = 'screen-view';
-    current.textContent = `zeigt: ${labelOf(screen.view)}`;
 
+    // Liste als zuverlaessige Alternative zum Ziehen - besonders auf
+    // Geraeten oder Browsern, bei denen sich Pointer-Events launisch
+    // anfuehlen, funktioniert eine Auswahlliste immer.
+    const select = document.createElement('select');
+    select.className = 'screen-view-select';
+    select.setAttribute('aria-label', `Ansicht fuer ${screen.name} auswaehlen`);
+    for (const view of views) {
+      const option = document.createElement('option');
+      option.value = view.path;
+      option.textContent = view.label;
+      if (view.path === screen.view) option.selected = true;
+      select.append(option);
+    }
+    select.addEventListener('change', () => handlers.assign(screen.id, select.value));
+    select.addEventListener('click', (event) => event.stopPropagation());
+
+    current.append('zeigt: ', select);
     card.append(left, right, current);
 
     // Antipp-Weg: erst Ansicht antippen, dann hier tippen.

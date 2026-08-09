@@ -69,7 +69,7 @@ class ServerTestCase(unittest.TestCase):
 
 
 class PublicPagesTest(ServerTestCase):
-    PUBLIC = ["/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/admin"]
+    PUBLIC = ["/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/admin", "/kurzbefehle"]
 
     def test_every_public_page_is_reachable(self):
         for path in self.PUBLIC:
@@ -363,6 +363,108 @@ class BoardsPageTest(ServerTestCase):
             self.create(f"Spiel {index}")
         status, body, _type = self.request(
             "POST", "/api/boards/create", {"name": "Zu viel", "kind": "score", "mode": "solo"}
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("schon", body["error"])
+
+
+class ShortcutsPageTest(ServerTestCase):
+    """Kurzbefehle ueber die HTTP-Schnittstelle: Baukasten-Seite, CRUD, /run/<id>."""
+
+    def create(self, name="Kurzbefehl", steps=None):
+        status, body, _type = self.request(
+            "POST", "/api/shortcuts/create", {"name": name, "steps": steps or []}
+        )
+        self.assertEqual(status, 200, body)
+        return body["shortcut"]
+
+    def test_builder_page_is_reachable(self):
+        status, body, content_type = self.request("GET", "/kurzbefehle")
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn(b"</html>", body)
+
+    def test_create_rename_update_delete(self):
+        shortcut = self.create("Alt", [{"type": "set_fx", "fx": "plain"}])
+        self.request("POST", "/api/shortcuts/rename", {"shortcutId": shortcut["id"], "name": "Neu"})
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["shortcuts"][0]["name"], "Neu")
+
+        new_steps = [{"type": "reset", "scope": "all"}]
+        self.request("POST", "/api/shortcuts/steps", {"shortcutId": shortcut["id"], "steps": new_steps})
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["shortcuts"][0]["steps"], new_steps)
+
+        status, _body, _type = self.request("POST", "/api/shortcuts/delete", {"shortcutId": shortcut["id"]})
+        self.assertEqual(status, 200)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["shortcuts"], [])
+
+    def test_run_url_executes_and_redirects_to_admin(self):
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        shortcut = self.create("Start", [{"type": "assign_screen", "screenId": "tv", "view": "/qr"}])
+
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", f"/run/{shortcut['id']}")
+        response = connection.getresponse()
+        response.read()
+        location = response.getheader("Location")
+        connection.close()
+
+        self.assertEqual(response.status, 302)
+        self.assertEqual(location, "/admin")
+
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["screens"][0]["view"], "/qr")
+
+    def test_unknown_run_id_still_redirects_without_error(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/run/gibtsnicht")
+        response = connection.getresponse()
+        response.read()
+        location = response.getheader("Location")
+        connection.close()
+        self.assertEqual(response.status, 302)
+        self.assertEqual(location, "/admin")
+
+    def test_run_skips_a_broken_step_but_runs_the_rest(self):
+        shortcut = self.create("Teilweise kaputt", [
+            {"type": "assign_screen", "screenId": "gibtsnicht", "view": "/qr"},
+            {"type": "set_info", "text": "trotzdem da"},
+        ])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", f"/run/{shortcut['id']}")
+        connection.getresponse().read()
+        connection.close()
+
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["info"]["text"], "trotzdem da")
+
+    def test_run_creates_a_board_end_to_end(self):
+        shortcut = self.create("Board anlegen", [
+            {"type": "create_board", "name": "Mario Kart", "kind": "score", "mode": "solo"},
+        ])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", f"/run/{shortcut['id']}")
+        connection.getresponse().read()
+        connection.close()
+
+        _status, payload, _type = self.request("GET", "/api/state")
+        names = [b["name"] for b in payload["state"]["boards"]]
+        self.assertIn("Mario Kart", names)
+
+    def test_unknown_step_type_is_rejected_on_save(self):
+        shortcut = self.create("Halb kaputt", [
+            {"type": "set_fx", "fx": "plain"},
+            {"type": "flieg_zum_mond"},
+        ])
+        self.assertEqual(len(shortcut["steps"]), 1)
+
+    def test_shortcut_limit_gives_a_clean_error(self):
+        for index in range(lb.MAX_SHORTCUTS):
+            self.create(f"Kurzbefehl {index}")
+        status, body, _type = self.request(
+            "POST", "/api/shortcuts/create", {"name": "Zu viel", "steps": []}
         )
         self.assertEqual(status, 400)
         self.assertIn("schon", body["error"])

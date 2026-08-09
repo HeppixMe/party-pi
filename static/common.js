@@ -42,6 +42,34 @@ export function serverNow() {
   return Date.now() + clockOffset;
 }
 
+/**
+ * Der Live-Stream baut Listen bei jeder Aenderung neu auf. Damit dabei nicht
+ * mitten im Tippen das Feld verlorengeht, merken wir uns das fokussierte
+ * Feld ueber data-key und stellen es danach wieder her - inklusive des
+ * bereits getippten Textes. Von admin.js und shortcuts.js genutzt, ueberall
+ * dort, wo ein Zustandsschub eine Eingabeliste neu aufbauen koennte.
+ */
+export function withFocusPreserved(render) {
+  const active = document.activeElement;
+  const key = active?.dataset?.key;
+  const value = key ? active.value : null;
+  const start = key ? active.selectionStart : null;
+  const end = key ? active.selectionEnd : null;
+
+  render();
+
+  if (!key) return;
+  const restored = document.querySelector(`[data-key="${CSS.escape(key)}"]`);
+  if (!restored) return;
+  restored.value = value;
+  restored.focus();
+  try {
+    restored.setSelectionRange(start, end);
+  } catch (err) {
+    /* Feldtypen ohne Auswahlbereich ignorieren */
+  }
+}
+
 /** Laeuft diese Uhr gerade? (0 ist ein gueltiger Startzeitpunkt, daher != null) */
 export function isRunning(timer) {
   return Boolean(timer) && timer.runningSince != null;
