@@ -241,9 +241,10 @@ Leaderboard gelöscht, das gerade eine Hälfte belegte, springt diese Hälfte au
 das Haupt-Leaderboard zurück.
 
 **Vibe**: eine Stimmungs-/Deko-Ansicht für die Pause zwischen zwei Runden, unter `/vibe` und
-in der Ansichten-Palette wählbar. Reagiert mit Mikrofon-Erlaubnis auf die Musik im Raum,
-sonst läuft eine ruhige automatische Animation — läuft komplett lokal, nichts wird
-aufgenommen oder verschickt.
+in der Ansichten-Palette wählbar. Erkennt beim Laden von selbst, ob ein Mikrofon
+angeschlossen ist, und reagiert dann auf die Musik im Raum — ganz ohne eigene Nachfrage auf
+der Seite. Ohne Mikrofon läuft von Anfang an eine ruhige automatische Animation — läuft
+komplett lokal, nichts wird aufgenommen oder verschickt.
 
 ### Kurzbefehle
 

@@ -8,13 +8,14 @@
 <style>
 /*
  * Eigenstaendige Stimmungs-/Ambient-Anzeige, eine einzige Datei ohne
- * Abhaengigkeiten. Reagiert per Mikrofon auf die Musik im Raum (Web Audio
- * API); ohne Mikrofonzugriff laeuft stattdessen eine ruhige, zeitgesteuerte
- * Animation - die Seite haengt also nie fest. Gedacht als Deko-Bildschirm
- * fuer Pausen zwischen den Spielen. Bewusst einfarbig Orange, wie die
- * Leitfarbe des Cyberpunk-Themes der Pi-Version (party-pi/static/theme.css) -
- * Cyan ist dort nur die Farbe von Team 2 und gehoert nicht auf eine Seite
- * ohne Teams.
+ * Abhaengigkeiten. Erkennt beim Laden von selbst, ob ein Mikrofon
+ * angeschlossen ist, und reagiert dann per Web Audio API auf die Musik im
+ * Raum - ganz ohne eigene Nachfrage auf der Seite. Ohne Mikrofon laeuft von
+ * Anfang an eine ruhige, zeitgesteuerte Animation - die Seite haengt also
+ * nie fest. Gedacht als Deko-Bildschirm fuer Pausen zwischen den Spielen.
+ * Bewusst einfarbig Orange, wie die Leitfarbe des Cyberpunk-Themes der
+ * Pi-Version (party-pi/static/theme.css) - Cyan ist dort nur die Farbe von
+ * Team 2 und gehoert nicht auf eine Seite ohne Teams.
  */
 :root {
   --bg: #0a0705;
@@ -32,25 +33,6 @@ html, body {
 }
 canvas { display: block; position: fixed; inset: 0; }
 
-.overlay {
-  position: fixed; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 1.2rem; text-align: center; padding: 2rem;
-  background: radial-gradient(ellipse at center, rgba(26, 14, 6, 0.92), rgba(10, 7, 5, 0.98));
-  transition: opacity 0.6s ease;
-}
-.overlay.hidden { opacity: 0; pointer-events: none; }
-.overlay h1 {
-  margin: 0; font-size: clamp(2rem, 7vw, 4rem); letter-spacing: 0.15em;
-  color: var(--team-a);
-  text-shadow:
-    0 0 0.15em rgba(255, 200, 100, 0.95),
-    0 0 0.45em rgba(255, 122, 24, 0.85),
-    0 0 1.1em rgba(255, 122, 24, 0.55),
-    0 0 2.4em rgba(255, 122, 24, 0.3);
-}
-.overlay p { margin: 0; color: var(--muted); max-width: 34rem; line-height: 1.5; }
-.overlay .row { display: flex; gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
 button {
   font-family: inherit; font-size: 0.95rem; cursor: pointer;
   background: transparent; color: var(--text);
@@ -60,8 +42,6 @@ button {
   transition: box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 button:hover { background: var(--team-a); color: #180a00; box-shadow: 0 0 26px rgba(255, 122, 24, 0.7); }
-button.alt { border-color: var(--muted); color: var(--muted); box-shadow: none; }
-button.alt:hover { background: var(--muted); color: #180a00; box-shadow: 0 0 20px rgba(168, 123, 88, 0.5); }
 
 .hud {
   position: fixed; left: 1rem; bottom: 1rem;
@@ -86,27 +66,12 @@ body.show-hud .controls { opacity: 1; }
 <body>
   <canvas id="stage"></canvas>
 
-  <div class="overlay" id="overlay">
-    <h1>VIBE</h1>
-    <p>
-      Stimmungs-Anzeige fuer die Pause zwischen zwei Runden - laeuft komplett
-      lokal, nichts wird aufgenommen oder verschickt. Mit Mikrofon reagieren
-      Farbe und Bewegung auf die Musik im Raum; ohne Mikrofon laeuft eine
-      ruhige automatische Animation.
-    </p>
-    <div class="row">
-      <button id="start-mic" type="button">Mit Mikrofon starten</button>
-      <button class="alt" id="start-plain" type="button">Ohne Mikrofon</button>
-    </div>
-  </div>
-
   <div class="hud">
     <span class="dot" id="hud-dot"></span>
     <span id="hud-text">ambient</span>
   </div>
   <div class="controls">
     <button id="toggle-fullscreen" type="button">Vollbild</button>
-    <button id="back-to-menu" type="button">Menue</button>
   </div>
 
 <script>
@@ -175,6 +140,21 @@ async function startAudio() {
     console.warn('Mikrofon nicht verfuegbar, automatische Animation laeuft weiter:', err.message);
     audioActive = false;
     setHud(false);
+    return false;
+  }
+}
+
+// Ob ein Mikrofon ueberhaupt angeschlossen ist, laesst sich ohne Erlaubnis
+// pruefen (enumerateDevices zeigt Geraete auch ohne Berechtigung an, nur
+// ohne Bezeichnung). Gibt es keins, wird gar nicht erst nach einer
+// Berechtigung gefragt - dann laeuft von Anfang an nur die automatische
+// Animation, ganz ohne eigene Frage auf der Seite.
+async function hasMicrophone() {
+  if (!navigator.mediaDevices?.enumerateDevices) return false;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.some((device) => device.kind === 'audioinput');
+  } catch (err) {
     return false;
   }
 }
@@ -308,23 +288,15 @@ function draw() {
 }
 
 // -- Bedienung ----------------------------------------------------------
-const overlay = document.getElementById('overlay');
-function begin() {
-  overlay.classList.add('hidden');
-  document.body.classList.add('show-hud');
-}
+// Kein Auswahlbildschirm mehr - die Animation laeuft sofort, im Hintergrund
+// wird automatisch erkannt, ob ein Mikrofon da ist, und bei Erfolg live
+// umgeschaltet. Ohne Mikrofon (oder ohne Erlaubnis) bleibt es einfach bei
+// der automatischen Animation, ohne dass irgendwer gefragt wird.
+(async () => {
+  if (await hasMicrophone()) await startAudio();
+  else setHud(false);
+})();
 
-document.getElementById('start-mic').addEventListener('click', async () => {
-  await startAudio();
-  begin();
-});
-document.getElementById('start-plain').addEventListener('click', () => {
-  setHud(false);
-  begin();
-});
-document.getElementById('back-to-menu').addEventListener('click', () => {
-  overlay.classList.remove('hidden');
-});
 document.getElementById('toggle-fullscreen').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen().catch(() => {});

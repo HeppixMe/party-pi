@@ -22,12 +22,14 @@ braucht es die Pi-Version mit echtem Server.
 
 ## `vibe/`
 
-Stimmungs-/Ambient-Anzeige für die Pause zwischen zwei Runden. Mit erlaubtem
-Mikrofon reagieren Partikel, der pulsierende Mittelring und die
-Spektrum-Balken unten auf die Musik im Raum (Web Audio API,
-`AnalyserNode.getByteFrequencyData`). Ohne Mikrofon - oder wenn der Zugriff
-abgelehnt wird - läuft stattdessen eine ruhige, zeitgesteuerte Animation mit
-denselben Farben; die Seite bleibt so in jedem Fall benutzbar.
+Stimmungs-/Ambient-Anzeige für die Pause zwischen zwei Runden. Erkennt beim
+Öffnen von selbst, ob ein Mikrofon angeschlossen ist - keine eigene Frage auf
+der Seite. Ist eins da, reagieren Partikel, der pulsierende Mittelring und
+die Spektrum-Balken unten auf die Musik im Raum (Web Audio API,
+`AnalyserNode.getByteFrequencyData`, der Browser fragt dabei einmalig nach
+der Erlaubnis). Ohne Mikrofon - oder wenn der Zugriff abgelehnt wird - läuft
+stattdessen eine ruhige, zeitgesteuerte Animation mit denselben Farben; die
+Seite bleibt so in jedem Fall benutzbar.
 
 Nichts wird aufgenommen oder verschickt: das Mikrofonsignal verlässt nie den
 Browser. `F` schaltet Vollbild um (praktisch für Fernseher/Beamer),
