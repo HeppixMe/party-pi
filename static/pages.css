@@ -252,12 +252,20 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--line-hot);
   box-shadow: 0 0 14px rgba(255, 122, 24, 0.25);
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;          /* sonst scrollt das Handy statt zu ziehen */
   transition: box-shadow 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
 }
 .remote-btn:hover { box-shadow: 0 0 26px rgba(255, 122, 24, 0.55); }
 .remote-btn:active { transform: scale(0.97); }
 .remote-btn:disabled { opacity: 0.5; cursor: wait; }
+.remote-btn.dragging {
+  cursor: grabbing;
+  box-shadow: 0 0 30px rgba(255, 122, 24, 0.75);
+  border-color: var(--accent);
+  z-index: 5;
+}
 .remote-btn .steps { font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--muted); font-size: 0.8em; }
 
 /* Meldung unten - dieselbe Optik wie im Admin (admin.css), hier fuer alle

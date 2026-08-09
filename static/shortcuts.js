@@ -131,6 +131,33 @@ const BLOCK_DEFS = {
       return wrap;
     },
   },
+  split_screen: {
+    label: 'Bildschirm teilen',
+    hint: 'zeigt auf einem Bildschirm zwei Ansichten nebeneinander',
+    make: () => ({
+      type: 'split_screen', screenId: '', left: views[0]?.path || '/', right: views[1]?.path || '/',
+    }),
+    fields(step) {
+      const wrap = document.createElement('div');
+      wrap.className = 'block-fields';
+      const screens = state?.screens || [];
+      if (!screens.length) {
+        wrap.append(hintSpan('Noch kein Bildschirm angemeldet – zuerst /screen/<name> auf dem Gerät öffnen.'));
+        return wrap;
+      }
+      if (!step.screenId || !screens.some((s) => s.id === step.screenId)) step.screenId = screens[0].id;
+      if (!views.some((v) => v.path === step.left)) step.left = views[0]?.path || '/';
+      if (!views.some((v) => v.path === step.right)) step.right = views[1]?.path || views[0]?.path || '/';
+      wrap.append(
+        selectField(screens.map((s) => [s.id, s.name]), step.screenId, (v) => { step.screenId = v; }),
+        hintSpan('links'),
+        selectField(views.map((v) => [v.path, v.label]), step.left, (v) => { step.left = v; }),
+        hintSpan('rechts'),
+        selectField(views.map((v) => [v.path, v.label]), step.right, (v) => { step.right = v; }),
+      );
+      return wrap;
+    },
+  },
   create_board: {
     label: 'Leaderboard erstellen',
     hint: 'legt ein neues eigenes Leaderboard an',

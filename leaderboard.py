@@ -1223,7 +1223,7 @@ def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> Non
 # haelt fest, welche Typen es gibt, damit ein kaputter/fremder Typ beim
 # Laden oder Speichern einfach verworfen wird statt den Server zu verwirren.
 SHORTCUT_STEP_TYPES = (
-    "assign_screen", "create_board", "start_level", "board_start_level",
+    "assign_screen", "split_screen", "create_board", "start_level", "board_start_level",
     "start_timer", "board_start_timer",
     "set_fx", "set_info", "reset", "board_reset",
 )
@@ -1276,6 +1276,15 @@ def clamp_step(raw) -> dict | None:
         if not screen_id or not isinstance(view, str) or not view:
             return None
         return {"type": step_type, "screenId": screen_id, "view": view}
+
+    if step_type == "split_screen":
+        screen_id = clamp_screen_id(raw.get("screenId"))
+        left = raw.get("left")
+        right = raw.get("right")
+        if not screen_id or not isinstance(left, str) or not left \
+                or not isinstance(right, str) or not right:
+            return None
+        return {"type": step_type, "screenId": screen_id, "left": left, "right": right}
 
     if step_type == "create_board":
         kind = raw.get("kind")
@@ -1392,6 +1401,27 @@ def op_delete_shortcut(state: dict, shortcut_id) -> None:
     state["shortcuts"] = remaining
 
 
+def op_reorder_shortcuts(state: dict, order) -> None:
+    """Bringt die Kurzbefehle in eine vom Client per Ziehen festgelegte
+    Reihenfolge - dieselbe Liste bestimmt sowohl die Kurzbefehl-Liste im
+    Admin als auch die Knopf-Reihenfolge auf der Fernbedienung, es gibt
+    keine eigene Sortierung fuer beide. Unbekannte Ids werden ignoriert,
+    fehlende bleiben in ihrer bisherigen Reihenfolge hinten dran - so
+    bleibt die Liste auch bei einem unvollstaendigen Aufruf konsistent."""
+    if not isinstance(order, list):
+        raise ValueError("Reihenfolge fehlt")
+    by_id = {s["id"]: s for s in state["shortcuts"]}
+    seen = set()
+    ordered = []
+    for shortcut_id in order:
+        shortcut = by_id.get(shortcut_id)
+        if shortcut is not None and shortcut_id not in seen:
+            ordered.append(shortcut)
+            seen.add(shortcut_id)
+    ordered.extend(s for s in state["shortcuts"] if s["id"] not in seen)
+    state["shortcuts"] = ordered
+
+
 def run_shortcut_step(state: dict, step: dict, now: int) -> None:
     """Fuehrt einen einzelnen Baustein aus. Fehler (z.B. ein inzwischen
     geloeschter Bildschirm oder ein geloeschtes Leaderboard) werden
@@ -1401,6 +1431,8 @@ def run_shortcut_step(state: dict, step: dict, now: int) -> None:
     try:
         if step_type == "assign_screen":
             op_assign_screen(state, step["screenId"], step["view"])
+        elif step_type == "split_screen":
+            op_set_screen_split(state, step["screenId"], step["left"], step["right"])
         elif step_type == "create_board":
             op_create_board(state, step.get("name"), step["kind"], step["mode"], now)
         elif step_type == "start_level":
@@ -2017,6 +2049,9 @@ class Handler(BaseHTTPRequestHandler):
             },
             "/api/shortcuts/delete": lambda body, now: store.mutate(
                 lambda s: op_delete_shortcut(s, body.get("shortcutId"))
+            ),
+            "/api/shortcuts/reorder": lambda body, now: store.mutate(
+                lambda s: op_reorder_shortcuts(s, body.get("order"))
             ),
         }
 

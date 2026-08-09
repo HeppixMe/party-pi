@@ -673,6 +673,25 @@ class ShortcutsTest(unittest.TestCase):
         lb.op_run_shortcut(state, shortcut["id"], now=1000)
         self.assertEqual(state["screens"][0]["view"], "/qr")
 
+    def test_create_and_run_splits_a_screen(self):
+        state = lb.default_state()
+        lb.op_touch_screen(state, "tv", 0)
+        steps = [{"type": "split_screen", "screenId": "tv", "left": "/", "right": "/qr"}]
+        shortcut = lb.op_create_shortcut(state, "Teilen", steps, now=0)
+        self.assertEqual(shortcut["steps"], steps)
+
+        lb.op_run_shortcut(state, shortcut["id"], now=1000)
+        self.assertEqual(state["screens"][0]["split"], {"left": "/", "right": "/qr"})
+
+    def test_split_screen_step_with_missing_fields_is_dropped_on_save(self):
+        state = lb.default_state()
+        steps = [
+            {"type": "split_screen", "screenId": "tv", "left": "", "right": "/qr"},
+            {"type": "split_screen", "screenId": "", "left": "/", "right": "/qr"},
+        ]
+        shortcut = lb.op_create_shortcut(state, "Kaputt", steps, now=0)
+        self.assertEqual(shortcut["steps"], [])
+
     def test_run_creates_a_board(self):
         state = lb.default_state()
         steps = [{"type": "create_board", "name": "Mario Kart", "kind": "race", "mode": "solo"}]

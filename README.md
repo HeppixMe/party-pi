@@ -260,6 +260,7 @@ umsortierbar. Verfügbare Bausteine:
 | Baustein | Wirkung |
 |---|---|
 | Bildschirm zuweisen | weist einer Ansicht einen Bildschirm zu |
+| Bildschirm teilen | zeigt auf einem Bildschirm zwei Ansichten nebeneinander |
 | Leaderboard erstellen | legt ein neues eigenes Leaderboard an |
 | SOS-Level starten | legt ein Level im eingebauten SOS-Rennen an (Häkchen „Uhren sofort starten“ optional) |
 | SOS-Uhren starten | startet beide Uhren des zuletzt angelegten SOS-Levels |
@@ -297,7 +298,10 @@ entfernten Bildschirm oder ein gelöschtes Leaderboard zeigt, wird beim Ausführ
 Unter `/fernbedienung` (auch von `/kurzbefehle` aus verlinkt) stehen alle gespeicherten
 Kurzbefehle als große, antippbare Knöpfe — praktisch fürs Handy in der Hosentasche, ohne
 erst ins Admin zu wechseln. Ein Kurzbefehl mit Namensabfrage öffnet dort automatisch die
-Eingabeseite, statt ihn im Hintergrund wirkungslos auszuführen.
+Eingabeseite, statt ihn im Hintergrund wirkungslos auszuführen. Die Knöpfe lassen sich per
+**Ziehen umsortieren** (Maus oder Finger) — praktisch, um den wichtigsten Kurzbefehl nach
+ganz oben zu holen. Die Reihenfolge wird auf dem Server gespeichert und gilt dann auch für
+die Kurzbefehl-Liste im Admin, es gibt nur eine gemeinsame Reihenfolge.
 
 ### Effekte und Lüfter
 
@@ -382,7 +386,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 242 Tests, ~10 s
+python3 -m unittest discover -s tests      # 247 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

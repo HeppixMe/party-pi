@@ -596,6 +596,36 @@ class ShortcutsPageTest(ServerTestCase):
         self.assertEqual(status, 400)
         self.assertIn("schon", body["error"])
 
+    def test_reorder_puts_shortcuts_in_the_given_order(self):
+        first = self.create("Erster")
+        second = self.create("Zweiter")
+        third = self.create("Dritter")
+        status, _body, _type = self.request(
+            "POST", "/api/shortcuts/reorder",
+            {"order": [third["id"], first["id"], second["id"]]},
+        )
+        self.assertEqual(status, 200)
+        _status, payload, _type = self.request("GET", "/api/state")
+        ids = [s["id"] for s in payload["state"]["shortcuts"]]
+        self.assertEqual(ids, [third["id"], first["id"], second["id"]])
+
+    def test_reorder_keeps_unmentioned_shortcuts_at_the_end(self):
+        first = self.create("Erster")
+        second = self.create("Zweiter")
+        self.request("POST", "/api/shortcuts/reorder", {"order": [first["id"]]})
+        _status, payload, _type = self.request("GET", "/api/state")
+        ids = [s["id"] for s in payload["state"]["shortcuts"]]
+        self.assertEqual(ids, [first["id"], second["id"]])
+
+    def test_reorder_ignores_unknown_ids(self):
+        first = self.create("Erster")
+        status, _body, _type = self.request(
+            "POST", "/api/shortcuts/reorder", {"order": ["gibtsnicht", first["id"]]}
+        )
+        self.assertEqual(status, 200)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["shortcuts"][0]["id"], first["id"])
+
     def test_run_by_name_works_just_like_by_id(self):
         self.create("Party-Start", [{"type": "set_fx", "fx": "plain"}])
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
