@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leaderboard (Standalone)</title>
+<link rel="icon" href="data:,">
+<style>
+/*
+ * Eigenstaendige Leaderboard-Seite ohne Server: eine einzige Datei, alles
+ * inline. Der Zustand lebt in localStorage statt auf einem Pi - dafuer
+ * braucht es weder Python noch ein Netzwerk. Gedacht fuer einen schnellen
+ * Spieleabend ohne Installation: Datei doppelklicken, fertig.
+ *
+ * Farben und Grundlayout sind an das Cyberpunk-Theme des Pi-Leaderboards
+ * angelehnt (party-pi/static/theme.css), damit beide Varianten gleich
+ * aussehen.
+ */
+:root {
+  --bg: #0a0705;
+  --bg-panel: #14100c;
+  --bg-row: #1d1610;
+  --line: #4a2a12;
+  --text: #ffe8d2;
+  --muted: #a87b58;
+  --accent: #ff7a18;
+  --accent-2: #ffb020;
+  --team-a: #ff7a18;
+  --team-b: #00e5ff;
+  --ok: #4dff9f;
+  --bad: #ff2e5b;
+  --gold: #ffb020;
+  --mono: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", ui-monospace, "Courier New", monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%;
+  background: var(--bg); color: var(--text);
+  font-family: var(--mono);
+}
+body {
+  display: flex; flex-direction: column;
+  padding: clamp(0.8rem, 2vh, 1.6rem) clamp(1rem, 2vw, 2.4rem);
+  gap: 1rem;
+}
+h1 { font-size: clamp(1.3rem, 3vh, 2.4rem); margin: 0; letter-spacing: 0.08em; text-transform: uppercase; }
+.topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.tag { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.08em; }
+button {
+  font-family: inherit; font-size: 0.85rem; cursor: pointer;
+  background: var(--bg-row); color: var(--text);
+  border: 1px solid var(--line); border-radius: 3px;
+  padding: 0.45rem 0.8rem;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.primary { background: var(--accent); color: #180a00; border-color: var(--accent); font-weight: 700; }
+button.danger { border-color: var(--bad); color: var(--bad); background: transparent; }
+button.ghost { background: transparent; color: var(--muted); }
+input[type="text"] {
+  font-family: inherit; background: var(--bg-row); color: var(--text);
+  border: 1px solid var(--line); border-radius: 3px; padding: 0.4rem 0.6rem;
+}
+input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 0.5rem 0.7rem; text-align: right; }
+thead th { color: var(--muted); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.08em; border-bottom: 2px solid var(--line); }
+thead th.level { text-align: left; }
+thead th.a { color: var(--team-a); }
+thead th.b { color: var(--team-b); }
+tbody th { text-align: left; font-weight: 500; color: var(--muted); }
+tbody tr { border-bottom: 1px solid var(--line); }
+tbody tr.active th { color: var(--text); }
+tbody tr.active th::before { content: "> "; color: var(--accent); }
+tbody td:nth-child(2) { color: var(--team-a); font-weight: 700; font-size: 1.3rem; }
+tbody td:nth-child(3) { color: var(--team-b); font-weight: 700; font-size: 1.3rem; }
+tfoot th, tfoot td { border-top: 2px solid var(--line); font-weight: 700; }
+tfoot td.leader { color: var(--gold); }
+
+.board { flex: 1 1 auto; display: flex; flex-direction: column; gap: 1rem; }
+.panel { background: var(--bg-panel); border: 1px solid var(--line); padding: 1rem; }
+.empty { color: var(--muted); text-align: center; padding: 2rem 0; }
+
+.editor { display: none; flex-direction: column; gap: 0.6rem; }
+body.edit .editor { display: flex; }
+body.edit .hint { display: block; }
+.hint { display: none; color: var(--muted); font-size: 0.75rem; }
+.row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+.level-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 0.5rem; align-items: center; background: var(--bg-row); padding: 0.5rem; }
+.level-row input[type="text"] { width: 100%; }
+.clock-btns { display: flex; gap: 0.3rem; }
+.clock-btns button { padding: 0.3rem 0.5rem; font-size: 0.75rem; }
+.clock-btns button.running { background: var(--ok); border-color: var(--ok); color: #04180d; }
+
+footer { color: var(--muted); font-size: 0.7rem; text-align: center; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>Leaderboard</h1>
+    <div class="row">
+      <span class="tag">Standalone - kein Server noetig</span>
+      <button id="toggle-edit" type="button">Bearbeiten</button>
+    </div>
+  </div>
+
+  <div class="board">
+    <section class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th class="level">Level</th>
+            <th class="a" id="head-a">Team 1</th>
+            <th class="b" id="head-b">Team 2</th>
+          </tr>
+        </thead>
+        <tbody id="body"></tbody>
+        <tfoot>
+          <tr>
+            <th>Gesamt</th>
+            <td id="total-a">00:00.0</td>
+            <td id="total-b">00:00.0</td>
+          </tr>
+          <tr>
+            <th style="font-weight:400; font-size:0.75rem; color:var(--muted)">Level gewonnen</th>
+            <td id="wins-a" style="font-size:0.85rem; color:var(--muted)">0</td>
+            <td id="wins-b" style="font-size:0.85rem; color:var(--muted)">0</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="empty" id="empty" hidden>Noch kein Level gestartet - auf „Bearbeiten" tippen.</p>
+    </section>
+
+    <section class="panel editor">
+      <div class="two-col">
+        <div>
+          <label class="hint" style="display:block">Team 1</label>
+          <input type="text" id="name-a" maxlength="40">
+        </div>
+        <div>
+          <label class="hint" style="display:block">Team 2</label>
+          <input type="text" id="name-b" maxlength="40">
+        </div>
+      </div>
+
+      <div class="row">
+        <input type="text" id="level-name" placeholder="Name des naechsten Levels" style="flex:1 1 12rem">
+        <button class="primary" id="add-level" type="button">Neues Level starten</button>
+      </div>
+      <p class="hint">Startet beide Uhren sofort; Bisheriges friert genau so ein, wie es steht.</p>
+
+      <div id="levels" style="display:flex; flex-direction:column; gap:0.5rem"></div>
+
+      <div class="row" style="margin-top:0.5rem">
+        <button class="danger" id="reset" type="button">Alles zuruecksetzen</button>
+      </div>
+      <p class="hint">Der Zustand liegt in diesem Browser (localStorage) - mehrere offene Tabs bleiben live synchron, ein anderes Geraet sieht ihn nicht.</p>
+    </section>
+  </div>
+
+  <footer>Teil von <a href="https://github.com/HeppixMe/party-pi" target="_blank">party-pi</a> - laeuft komplett offline, keine Daten verlassen den Browser.</footer>
+
+<script>
+'use strict';
+const STORAGE_KEY = 'party-pi-standalone-leaderboard';
+const TEAM_IDS = ['a', 'b'];
+const $ = (id) => document.getElementById(id);
+
+function defaultState() {
+  return {
+    teams: { a: 'Team 1', b: 'Team 2' },
+    levels: [], // { id, name, active, timers: { a: {elapsedMs, runningSince, finished}, b: {...} } }
+  };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return defaultState();
+    const state = defaultState();
+    if (parsed.teams) {
+      state.teams.a = parsed.teams.a || state.teams.a;
+      state.teams.b = parsed.teams.b || state.teams.b;
+    }
+    if (Array.isArray(parsed.levels)) state.levels = parsed.levels;
+    return state;
+  } catch (err) {
+    return defaultState();
+  }
+}
+
+function save() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+}
+
+let state = load();
+let suppressNextStorageEvent = false;
+
+// Andere Tabs im selben Browser live mitziehen - der einfache Ersatz fuer den
+// Server-Sent-Events-Strom der Pi-Version.
+window.addEventListener('storage', (event) => {
+  if (event.key !== STORAGE_KEY) return;
+  state = load();
+  render();
+});
+
+function newId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function newTimer(runningSince = null) {
+  return { elapsedMs: 0, runningSince, finished: false };
+}
+
+function timerValue(timer, now = Date.now()) {
+  if (!timer) return 0;
+  let value = timer.elapsedMs || 0;
+  if (timer.runningSince != null) value += Math.max(0, now - timer.runningSince);
+  return value;
+}
+
+function isRunning(timer) {
+  return Boolean(timer) && timer.runningSince != null;
+}
+
+function freezeTimer(timer, now) {
+  if (timer.runningSince != null) {
+    timer.elapsedMs = timerValue(timer, now);
+    timer.runningSince = null;
+  }
+}
+
+function formatTime(ms) {
+  const total = Math.max(0, Math.floor(ms));
+  const tenths = Math.floor((total % 1000) / 100);
+  const seconds = Math.floor(total / 1000) % 60;
+  const minutes = Math.floor(total / 60000) % 60;
+  const hours = Math.floor(total / 3600000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const base = hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+  return `${base}.${tenths}`;
+}
+
+function teamName(id) {
+  return state.teams[id] || (id === 'a' ? 'Team 1' : 'Team 2');
+}
+
+function activeLevel() {
+  return [...state.levels].reverse().find((lv) => lv.active) || state.levels[state.levels.length - 1] || null;
+}
+
+function computeStandings(now = Date.now()) {
+  const totals = { a: 0, b: 0 };
+  const wins = { a: 0, b: 0 };
+  for (const level of state.levels) {
+    const values = {};
+    for (const team of TEAM_IDS) {
+      values[team] = timerValue(level.timers[team], now);
+      totals[team] += values[team];
+    }
+    const bothDone = TEAM_IDS.every((t) => level.timers[t].finished);
+    if (bothDone && values.a !== values.b) wins[values.a < values.b ? 'a' : 'b'] += 1;
+  }
+  let leader = null;
+  if (wins.a !== wins.b) leader = wins.a > wins.b ? 'a' : 'b';
+  else if (totals.a !== totals.b && (totals.a || totals.b)) leader = totals.a < totals.b ? 'a' : 'b';
+  return { totals, wins, leader };
+}
+
+// -- Aktionen -----------------------------------------------------------
+function startLevel(name) {
+  const now = Date.now();
+  for (const level of state.levels) {
+    freezeTimer(level.timers.a, now);
+    freezeTimer(level.timers.b, now);
+    level.active = false;
+  }
+  state.levels.push({
+    id: newId(),
+    name: name || `Level ${state.levels.length + 1}`,
+    active: true,
+    timers: { a: newTimer(now), b: newTimer(now) },
+  });
+  save();
+}
+
+function timerAction(levelId, team, action) {
+  const level = state.levels.find((lv) => lv.id === levelId);
+  if (!level) return;
+  const timer = level.timers[team];
+  const now = Date.now();
+  if (action === 'toggle') {
+    if (isRunning(timer)) freezeTimer(timer, now);
+    else { timer.runningSince = now; timer.finished = false; }
+  } else if (action === 'finish') {
+    freezeTimer(timer, now);
+    timer.finished = !timer.finished;
+  } else if (action === 'reset') {
+    level.timers[team] = newTimer();
+  }
+  save();
+}
+
+function deleteLevel(levelId) {
+  state.levels = state.levels.filter((lv) => lv.id !== levelId);
+  if (state.levels.length && !state.levels.some((lv) => lv.active)) {
+    state.levels[state.levels.length - 1].active = true;
+  }
+  save();
+}
+
+// -- Darstellung ----------------------------------------------------------
+function render() {
+  $('head-a').textContent = teamName('a');
+  $('head-b').textContent = teamName('b');
+  if (document.activeElement !== $('name-a')) $('name-a').value = teamName('a');
+  if (document.activeElement !== $('name-b')) $('name-b').value = teamName('b');
+
+  const body = $('body');
+  body.replaceChildren();
+  $('empty').hidden = state.levels.length > 0;
+
+  for (const level of state.levels) {
+    const row = document.createElement('tr');
+    if (level.active) row.classList.add('active');
+    const label = document.createElement('th');
+    label.textContent = level.name;
+    row.append(label);
+    for (const team of TEAM_IDS) {
+      const cell = document.createElement('td');
+      cell.textContent = formatTime(timerValue(level.timers[team]));
+      cell.dataset.level = level.id;
+      cell.dataset.team = team;
+      row.append(cell);
+    }
+    body.append(row);
+  }
+
+  const standings = computeStandings();
+  $('total-a').textContent = formatTime(standings.totals.a);
+  $('total-b').textContent = formatTime(standings.totals.b);
+  $('wins-a').textContent = standings.wins.a;
+  $('wins-b').textContent = standings.wins.b;
+  $('total-a').classList.toggle('leader', standings.leader === 'a');
+  $('total-b').classList.toggle('leader', standings.leader === 'b');
+
+  renderEditor();
+}
+
+function renderEditor() {
+  const container = $('levels');
+  container.replaceChildren();
+  for (const level of [...state.levels].reverse()) {
+    const row = document.createElement('div');
+    row.className = 'level-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = level.name;
+    nameInput.maxLength = 60;
+    nameInput.addEventListener('change', () => { level.name = nameInput.value || level.name; save(); });
+    row.append(nameInput);
+
+    for (const team of TEAM_IDS) {
+      const timer = level.timers[team];
+      const btns = document.createElement('div');
+      btns.className = 'clock-btns';
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.textContent = `${teamName(team)}: ${isRunning(timer) ? 'Stopp' : 'Start'}`;
+      toggle.classList.toggle('running', isRunning(timer));
+      toggle.addEventListener('click', () => timerAction(level.id, team, 'toggle'));
+      const finish = document.createElement('button');
+      finish.type = 'button';
+      finish.textContent = timer.finished ? 'offen' : 'fertig';
+      finish.addEventListener('click', () => timerAction(level.id, team, 'finish'));
+      btns.append(toggle, finish);
+      row.append(btns);
+    }
+
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.type = 'button';
+    del.textContent = 'Loeschen';
+    del.addEventListener('click', () => {
+      if (confirm(`Level „${level.name}" loeschen?`)) deleteLevel(level.id);
+    });
+    row.append(del);
+
+    container.append(row);
+  }
+}
+
+// -- Ticken der laufenden Uhren --------------------------------------------
+function tick() {
+  const now = Date.now();
+  for (const cell of document.querySelectorAll('#body td[data-level]')) {
+    const level = state.levels.find((lv) => lv.id === cell.dataset.level);
+    const timer = level?.timers[cell.dataset.team];
+    if (isRunning(timer)) cell.textContent = formatTime(timerValue(timer, now));
+  }
+  const standings = computeStandings(now);
+  $('total-a').textContent = formatTime(standings.totals.a);
+  $('total-b').textContent = formatTime(standings.totals.b);
+  requestAnimationFrame(tick);
+}
+
+// -- Bedienung --------------------------------------------------------------
+$('toggle-edit').addEventListener('click', () => {
+  document.body.classList.toggle('edit');
+  $('toggle-edit').textContent = document.body.classList.contains('edit') ? 'Fertig' : 'Bearbeiten';
+});
+$('name-a').addEventListener('change', () => { state.teams.a = $('name-a').value || 'Team 1'; save(); });
+$('name-b').addEventListener('change', () => { state.teams.b = $('name-b').value || 'Team 2'; save(); });
+$('add-level').addEventListener('click', () => {
+  startLevel($('level-name').value.trim());
+  $('level-name').value = '';
+});
+$('level-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('add-level').click(); });
+$('reset').addEventListener('click', () => {
+  if (confirm('Wirklich alles zuruecksetzen? Das laesst sich nicht rueckgaengig machen.')) {
+    state = defaultState();
+    save();
+  }
+});
+
+render();
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
