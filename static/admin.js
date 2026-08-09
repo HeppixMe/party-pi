@@ -33,10 +33,6 @@ async function send(path, body) {
   try {
     await api(path, body);
   } catch (err) {
-    if (err.message.includes('Nicht angemeldet')) {
-      window.location.href = '/admin';
-      return;
-    }
     toast(err.message, 'error');
   }
 }
@@ -779,11 +775,6 @@ for (const button of document.querySelectorAll('button[data-reset]')) {
     }
   });
 }
-
-$('logout').addEventListener('click', async () => {
-  await send('/api/logout', {});
-  window.location.href = '/admin';
-});
 
 // -- Bildschirme -------------------------------------------------------------
 function renderScreenBlock(payload) {

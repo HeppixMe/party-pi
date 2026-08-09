@@ -10,13 +10,12 @@
 # Richtet ein:
 #   - Kopie des Projekts nach /opt/lanparty
 #   - Systembenutzer 'lanparty' fuer den Webdienst (laeuft nicht als root)
-#   - Admin-Passwort und leeren Spielstand
+#   - leeren Spielstand
 #   - systemd-Dienst fuers Leaderboard und einen fuer die Luefterkurve
 #   - optional Chromium im Vollbild-Kiosk
 #
 # Anpassbar ueber Umgebungsvariablen:
 #   LAN_HTTP_PORT       Port der Weboberflaeche                (Standard 80)
-#   LAN_ADMIN_PASSWORD  Admin-Passwort, sonst wird gefragt
 #   LAN_PUBLIC_URL      Adresse im QR-Code, z.B. http://192.168.178.42
 #   LAN_SETUP_KIOSK     1 = Chromium-Vollbild beim Booten      (Standard 0)
 #   LAN_KIOSK_PAGE      Startseite des Kiosk                   (Standard /screen/tv)
@@ -26,9 +25,9 @@
 #   LAN_SKIP_TESTS      1 = Selbsttest ueberspringen           (Standard 0)
 #
 # Sicherheitshinweis: Das Leaderboard spricht reines HTTP ohne Verschluesselung
-# und gehoert in das eigene, vertrauenswuerdige Heim-/Party-Netz. Das
-# Admin-Passwort haelt mitspielende Gaeste von der Steuerung fern - es ist kein
-# Schutz gegen einen Angreifer im selben Netz.
+# und ohne Anmeldung und gehoert in das eigene, vertrauenswuerdige Heim-/
+# Party-Netz. Jeder im selben Netz kann die Steuerung bedienen - genau wie am
+# Spieltisch nebenan. Nichts davon gehoert ungeschuetzt ins Internet.
 
 set -euo pipefail
 
@@ -55,7 +54,7 @@ case "${1:-}" in
   --status)      MODE="status" ;;
   --uninstall)   MODE="uninstall" ;;
   --no-services) MODE="prepare" ;;
-  --help|-h)     sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  --help|-h)     sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   "")            ;;
   *)             echo "Unbekannter Schalter: $1 (--help zeigt die Moeglichkeiten)" >&2; exit 1 ;;
 esac
@@ -175,11 +174,6 @@ fi
 if [ "$HAVE_SYSTEMD" = "0" ]; then
   LOCAL_DATA="${SOURCE_DIR}/data"
   mkdir -p "$LOCAL_DATA"
-  if [ -n "${LAN_ADMIN_PASSWORD:-}" ]; then
-    LAN_ADMIN_PASSWORD="$LAN_ADMIN_PASSWORD" \
-      python3 "$SOURCE_DIR/leaderboard.py" --data "$LOCAL_DATA" --set-password >/dev/null
-    ok "Admin-Passwort gesetzt."
-  fi
   echo '{"force": false}' > "${LOCAL_DATA}/fan-override.json"
   echo
   log "Vorbereitet - ohne Dienste."
@@ -214,31 +208,7 @@ chmod 750 "$DATA_DIR"
 ok "Dateien liegen bereit."
 
 # ---------------------------------------------------------------------------
-# 5. Admin-Passwort
-# ---------------------------------------------------------------------------
-ADMIN_PASSWORD="${LAN_ADMIN_PASSWORD:-}"
-if [ -z "$ADMIN_PASSWORD" ] && [ -f "$DATA_DIR/config.json" ] \
-   && grep -q '"password"' "$DATA_DIR/config.json" 2>/dev/null; then
-  ok "Admin-Passwort ist schon gesetzt - bleibt unveraendert."
-else
-  if [ -z "$ADMIN_PASSWORD" ]; then
-    if [ -t 0 ]; then
-      printf 'Admin-Passwort fuer die Steuerseite: '
-      read -rs ADMIN_PASSWORD
-      printf '\n'
-    else
-      die "Kein Passwort angegeben. LAN_ADMIN_PASSWORD setzen oder im Terminal starten."
-    fi
-  fi
-  [ -n "$ADMIN_PASSWORD" ] || die "Leeres Passwort - abgebrochen."
-  sudo -u "$SERVICE_USER" LAN_ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-    python3 "$INSTALL_DIR/leaderboard.py" --data "$DATA_DIR" --set-password >/dev/null
-  unset ADMIN_PASSWORD
-  ok "Admin-Passwort gesetzt."
-fi
-
-# ---------------------------------------------------------------------------
-# 6. Datenverzeichnis initialisieren
+# 5. Datenverzeichnis initialisieren
 # ---------------------------------------------------------------------------
 if [ ! -f "${DATA_DIR}/fan-override.json" ]; then
   echo '{"force": false}' > "${DATA_DIR}/fan-override.json"
@@ -248,7 +218,7 @@ chmod 664 "${DATA_DIR}/fan-override.json"
 ok "Datenverzeichnis vorbereitet."
 
 # ---------------------------------------------------------------------------
-# 7. Luefter-Konfiguration
+# 6. Luefter-Konfiguration
 # ---------------------------------------------------------------------------
 if [ -f "$FAN_CONF" ]; then
   ok "$FAN_CONF ist schon da - bleibt unveraendert."
@@ -264,7 +234,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 8. systemd-Dienste
+# 7. systemd-Dienste
 # ---------------------------------------------------------------------------
 log "Richte die Dienste ein..."
 cat > "/etc/systemd/system/${WEB_SERVICE}.service" <<EOF
@@ -322,7 +292,7 @@ systemctl is-active --quiet "${FAN_SERVICE}" && ok "$FAN_SERVICE laeuft." \
   || warn "$FAN_SERVICE startet nicht - journalctl -u $FAN_SERVICE -n 30"
 
 # ---------------------------------------------------------------------------
-# 9. Optional: Kiosk-Modus
+# 8. Optional: Kiosk-Modus
 # ---------------------------------------------------------------------------
 setup_kiosk() {
   local kiosk_user="${LAN_KIOSK_USER:-${SUDO_USER:-}}"

@@ -620,29 +620,13 @@ class BoardsTest(unittest.TestCase):
 
 
 class AuthTest(unittest.TestCase):
+    """Es gibt kein Admin-Passwort mehr - Auth signiert nur noch das
+    Spieler-Cookie, damit eine zweite Anmeldung den eigenen Eintrag findet."""
+
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.dir)
         self.auth = lb.Auth(os.path.join(self.dir, "config.json"))
-
-    def test_password_roundtrip(self):
-        self.auth.set_password("geheim123")
-        self.assertTrue(self.auth.verify("geheim123"))
-        self.assertFalse(self.auth.verify("geheim124"))
-
-    def test_token_is_accepted_only_with_valid_signature(self):
-        token = self.auth.make_token()
-        self.assertTrue(self.auth.check_token(token))
-        self.assertFalse(self.auth.check_token(token[:-1] + ("0" if token[-1] != "0" else "1")))
-        self.assertFalse(self.auth.check_token("quatsch"))
-        self.assertFalse(self.auth.check_token(None))
-
-    def test_expired_token_is_rejected(self):
-        expired = "1000000000.abcd"
-        signature = lb.hmac.new(
-            self.auth.config["secret"].encode(), expired.encode(), lb.hashlib.sha256
-        ).hexdigest()
-        self.assertFalse(self.auth.check_token(f"{expired}.{signature}"))
 
     def test_value_token_carries_the_player_id(self):
         token = self.auth.make_value_token("abc123", 3600)
@@ -655,7 +639,8 @@ class AuthTest(unittest.TestCase):
         self.assertIsNone(self.auth.check_value_token(self.auth.make_value_token("abc", -1)))
 
     def test_config_file_is_only_readable_by_owner(self):
-        self.auth.set_password("geheim")
+        # Traegt den Signierschluessel fuers Spieler-Cookie - der soll auch
+        # ohne Passwortsystem nicht fuer jeden lesbar auf der Platte liegen.
         mode = os.stat(self.auth.path).st_mode & 0o777
         self.assertEqual(mode, 0o600)
 
@@ -667,7 +652,6 @@ class HttpTest(unittest.TestCase):
     def setUpClass(cls):
         cls.dir = tempfile.mkdtemp()
         cls.httpd = lb.build_server("127.0.0.1", 0, cls.dir)
-        cls.httpd.auth.set_password("party")
         cls.port = cls.httpd.server_address[1]
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -700,56 +684,45 @@ class HttpTest(unittest.TestCase):
             parsed = raw
         return response.status, parsed, set_cookie
 
-    def login(self, password="party"):
-        status, _body, cookie = self.request("POST", "/api/login", {"password": password})
-        if cookie:
-            self.cookie = cookie.split(";", 1)[0]
-        return status
-
     def test_display_is_public(self):
         status, body, _ = self.request("GET", "/")
         self.assertEqual(status, 200)
         self.assertIn(b"Leaderboard", body)
 
-    def test_admin_needs_login(self):
-        status, _body, _ = self.request("GET", "/admin")
-        self.assertEqual(status, 401)
-        self.assertEqual(self.login(), 200)
+    def test_admin_needs_no_login(self):
+        # Kein Passwort mehr - /admin ist offen wie jede andere Seite.
         status, _body, _ = self.request("GET", "/admin")
         self.assertEqual(status, 200)
 
-    def test_writing_without_login_is_rejected(self):
+    def test_writing_works_without_any_login(self):
         status, body, _ = self.request("POST", "/api/sos/level", {"name": "Level 1"})
-        self.assertEqual(status, 401)
-        self.assertFalse(body.get("ok"))
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("ok"))
 
     def test_rejected_post_leaves_the_connection_usable(self):
-        # Wird der Rumpf einer abgelehnten Anfrage nicht gelesen, deutet der
-        # Server ihn auf derselben Keep-Alive-Verbindung als naechste Anfrage.
+        # Bleibt der Rumpf einer abgelehnten Anfrage ungelesen im Puffer,
+        # deutet der Server ihn auf derselben Keep-Alive-Verbindung als
+        # naechste Anfrage. Ausgeloest durch eine fremde Herkunft, da es sonst
+        # keine abgelehnten POSTs mehr gibt.
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         connection.request(
             "POST",
             "/api/sos/level",
             body=json.dumps({"name": "Level 1"}),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "Origin": "http://anderswo.example"},
         )
         first = connection.getresponse()
         first.read()
-        self.assertEqual(first.status, 401)
+        self.assertEqual(first.status, 403)
 
         connection.request("GET", "/api/state")
         second = connection.getresponse()
         payload = json.loads(second.read().decode("utf-8"))
         connection.close()
         self.assertEqual(second.status, 200)
-        self.assertFalse(payload["authed"])
-
-    def test_wrong_password_is_rejected(self):
-        self.assertEqual(self.login("falsch"), 401)
-        self.assertIsNone(self.cookie)
+        self.assertIn("state", payload)
 
     def test_full_round_of_sos(self):
-        self.assertEqual(self.login(), 200)
         self.request("POST", "/api/sos/teams", {"names": {"a": "Die Roten", "b": "Die Blauen"}})
         status, body, _ = self.request("POST", "/api/sos/level", {"name": "Level 1"})
         self.assertEqual(status, 200)
@@ -768,10 +741,8 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(body["state"]["sos"]["teams"][0]["name"], "Die Roten")
         self.assertEqual(body["standings"]["levelWins"], {"a": 1, "b": 0})
         self.assertEqual(body["standings"]["leader"], "a")
-        self.assertTrue(body["authed"])
 
     def test_smash_round(self):
-        self.assertEqual(self.login(), 200)
         _s, ana, _c = self.request("POST", "/api/smash/player", {"action": "add", "name": "Ana"})
         _s, ben, _c = self.request("POST", "/api/smash/player", {"action": "add", "name": "Ben"})
         status, _body, _ = self.request(
@@ -785,7 +756,6 @@ class HttpTest(unittest.TestCase):
         self.assertEqual((players["Ben"]["wins"], players["Ben"]["losses"]), (0, 1))
 
     def test_unknown_ids_give_clean_errors(self):
-        self.assertEqual(self.login(), 200)
         status, body, _ = self.request(
             "POST", "/api/sos/timer", {"levelId": "gibtsnicht", "team": "a", "action": "start"}
         )
@@ -793,7 +763,6 @@ class HttpTest(unittest.TestCase):
         self.assertIn("unbekannt", body["error"].lower())
 
     def test_state_survives_a_server_restart(self):
-        self.assertEqual(self.login(), 200)
         self.request("POST", "/api/sos/level", {"name": "Level 1"})
 
         reloaded = lb.Store(os.path.join(self.dir, "state.json"))

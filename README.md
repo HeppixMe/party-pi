@@ -18,7 +18,33 @@ Raspberry Pi am Fernseher oder Beamer — im orangen Cyberpunk-Look.
 * **Lüfterkurve** für den Pi, plus Schalter für dauerhafte Volllast.
 
 Alles mit **Python aus der Standardbibliothek**: kein `pip`, kein `npm`, kein Build.
-Auch der QR-Code wird selbst erzeugt.
+Auch der QR-Code wird selbst erzeugt. **Kein Passwort, keine Anmeldung** — `/admin` ist
+offen wie jede andere Seite, damit der Einstieg so einfach wie möglich ist.
+
+---
+
+## Schnellstart (Windows, Laptop, ohne Pi)
+
+Kein Raspberry Pi zur Hand? Auf jedem Rechner mit Python reicht das hier:
+
+* **Windows**: Projekt herunterladen (oder `git clone`), dann **`Windows-Starten.bat`**
+  doppelklicken. Sucht Python, startet den Server in einem eigenen Fenster und öffnet die
+  Steuerung im Browser — fertig.
+* **macOS / Linux**:
+  ```bash
+  python3 leaderboard.py --port 8000 --data ./data
+  ```
+  und `http://localhost:8000/admin` öffnen.
+
+Beide Wege starten sofort ohne Passwort. Andere Geräte im selben WLAN erreichen die Seite
+über die im Terminal/Server-Fenster angezeigte Adresse (z. B. `http://192.168.1.23:8000/`).
+Fragt Windows nach der Firewall, „Zugriff erlauben" antippen — nur so finden Handys im
+selben Netz die Mitmach-Seite.
+
+Für einen dauerhaften Aufbau auf dem Raspberry Pi mit eigenem Systemdienst, Kiosk-Modus und
+Lüftersteuerung: weiter mit der [Installation](#installation) unten. Wer nicht einmal
+Python installieren will, findet unter [`standalone/`](standalone/) zwei Seiten, die ganz
+ohne Server auskommen.
 
 ---
 
@@ -38,12 +64,12 @@ Später auf den neuesten Stand bringen:
 cd party-pi && git pull && sudo ./scripts/setup.sh
 ```
 
-Ein erneuter Durchlauf lässt Spielstand, Passwort und Lüfterkonfiguration unangetastet —
-er tauscht nur das Programm aus und startet die Dienste neu.
+Ein erneuter Durchlauf lässt Spielstand und Lüfterkonfiguration unangetastet — er tauscht
+nur das Programm aus und startet die Dienste neu.
 
-Es prüft die Voraussetzungen, läuft einmal durch die Tests, legt Benutzer, Dienste und
-Passwort an — und zeigt am Ende alle Adressen samt QR-Code direkt im Terminal, sodass du
-gleich mit dem Handy testen kannst.
+Es prüft die Voraussetzungen, läuft einmal durch die Tests, legt Benutzer und Dienste an —
+und zeigt am Ende alle Adressen samt QR-Code direkt im Terminal, sodass du gleich mit dem
+Handy testen kannst.
 
 | Aufruf | Wirkung |
 |---|---|
@@ -57,7 +83,6 @@ Anpassbar über Umgebungsvariablen:
 | Variable | Bedeutung | Standard |
 |---|---|---|
 | `LAN_HTTP_PORT` | Port der Weboberfläche | `80` |
-| `LAN_ADMIN_PASSWORD` | Passwort, sonst wird gefragt | – |
 | `LAN_PUBLIC_URL` | Adresse im QR-Code, z. B. `http://192.168.178.42` | selbst ermittelt |
 | `LAN_SETUP_KIOSK` | `1` = Chromium-Vollbild beim Booten | `0` |
 | `LAN_KIOSK_PAGE` | Startseite des Kiosk | `/screen/tv` |
@@ -78,8 +103,8 @@ sudo LAN_HTTP_PORT=8080 LAN_FAN_BACKEND=gpio LAN_FAN_GPIO_PIN=14 \
 python3 leaderboard.py --port 8000 --data ./data
 ```
 
-Beim ersten Start wird ein zufälliges Admin-Passwort erzeugt und **einmalig im Terminal
-angezeigt**. Ändern: `python3 leaderboard.py --data ./data --set-password`
+Startet sofort ohne Passwort — siehe auch den [Schnellstart](#schnellstart-windows-laptop-ohne-pi)
+oben, der genau das per Doppelklick für Windows anbietet.
 
 ---
 
@@ -96,7 +121,7 @@ angezeigt**. Ändern: `python3 leaderboard.py --data ./data --set-password`
 | `/seiten` | Übersicht über alle Seiten |
 | `/screen/<name>` | gesteuerter Bildschirm (siehe unten) |
 | `/board/<id>` | ein selbst angelegtes Leaderboard (siehe „Eigene Leaderboards") |
-| `/admin` | Steuerung, Passwort nötig |
+| `/admin` | Steuerung — kein Passwort nötig |
 
 ---
 
@@ -126,8 +151,10 @@ ein und wählt ein Team — fertig. Öffnet dieselbe Person die Seite später er
 ihren Eintrag und kann Name oder Team ändern, statt einen Doppelgänger anzulegen (das
 merkt sich ein Cookie).
 
-**Ergebnisse setzt weiterhin nur der Admin.** Gäste können ausschließlich ihren eigenen
-Eintrag ändern — keine Zeiten, keine Siege, keine Bildschirme.
+Es gibt kein separates Admin-Passwort: `/admin` ist für alle im selben Netz offen, genau
+wie die Mitmach-Seite. Das ist bewusst so einfach gehalten — auf einem Party-Abend im
+eigenen, vertrauenswürdigen WLAN ist das kein Problem. Wer das nicht möchte, öffnet `/admin`
+einfach nicht auf einem Gerät, das Gäste in die Hand bekommen.
 
 ### Smash
 
@@ -265,8 +292,8 @@ journalctl -u lanparty-leaderboard -f
 | QR-Code führt ins Leere | `LAN_PUBLIC_URL` setzen — der Pi rät die Adresse sonst selbst |
 | Bildschirm bleibt leer | zeigt er seinen Namen? Dann ist er angemeldet und wartet auf eine Zuweisung im Admin |
 | Lüfter dreht nicht | `journalctl -u lanparty-fan` — steht dort `Verfahren: monitor`, wurde kein steuerbarer Lüfter gefunden |
-| Passwort vergessen | `sudo -u lanparty python3 /opt/lanparty/leaderboard.py --data /opt/lanparty/data --set-password` |
 | Kiosk startet nicht | `/opt/lanparty/kiosk.sh` von Hand starten und die Ausgabe ansehen |
+| Windows: `Windows-Starten.bat` findet Python nicht | Python von [python.org](https://www.python.org/downloads/) installieren, dabei „Add python.exe to PATH" anhaken |
 
 Spielstand und Konfiguration liegen in `/opt/lanparty/data/` (`state.json`,
 `config.json`). Zum Aufheben einfach `state.json` kopieren.
@@ -276,12 +303,14 @@ Spielstand und Konfiguration liegen in `/opt/lanparty/data/` (`state.json`,
 ## Aufbau
 
 ```
-leaderboard.py     HTTP-Server: Seiten, API, Live-Stream (SSE), Zustand, Anmeldung
-qr.py              QR-Encoder (Reed-Solomon, Maskierung, SVG) - eigenständig nutzbar
-static/            alle Seiten; theme.css trägt Farben und Effekte, kein Framework
-fan/fan_control.py Lüfterdienst mit Erkennung des Ansteuerungsverfahrens
-scripts/setup.sh   Installation, Status, Deinstallation
-tests/             Tests für Wertung, Uhren, HTTP, Seiten, Anmeldung, QR und Lüfter
+leaderboard.py       HTTP-Server: Seiten, API, Live-Stream (SSE), Zustand
+qr.py                QR-Encoder (Reed-Solomon, Maskierung, SVG) - eigenständig nutzbar
+static/              alle Seiten; theme.css trägt Farben und Effekte, kein Framework
+fan/fan_control.py   Lüfterdienst mit Erkennung des Ansteuerungsverfahrens
+scripts/setup.sh     Installation, Status, Deinstallation (Raspberry Pi)
+Windows-Starten.bat  Ein-Klick-Start für Windows, ohne Installation
+standalone/          zwei Seiten ganz ohne Server (Leaderboard, Ambient-Anzeige)
+tests/               Tests für Wertung, Uhren, HTTP, Seiten, Spieler-Anmeldung, QR und Lüfter
 ```
 
 Der Server hält den Zustand im Speicher und schreibt ihn nach jeder Änderung atomar nach
@@ -300,19 +329,18 @@ python3 qr.py --text "http://beispiel/mitmachen"     # als ASCII-Bild im Termina
 
 ## Sicherheit
 
-Das Leaderboard spricht **reines HTTP ohne Verschlüsselung** und gehört in das eigene,
-vertrauenswürdige Heim- oder Party-Netz. Das Admin-Passwort hält mitspielende Gäste von
-der Steuerung fern — es ist **kein** Schutz gegen einen Angreifer im selben Netz, und
-nichts davon gehört ungeschützt ins Internet.
+Das Leaderboard spricht **reines HTTP ohne Verschlüsselung und ohne Anmeldung** und gehört
+in das eigene, vertrauenswürdige Heim- oder Party-Netz. Jeder im selben Netz kann die
+Steuerung bedienen, Spielstände ändern und Bildschirme umschalten — bewusst so einfach
+gehalten, genau wie am Spieltisch nebenan. Nichts davon gehört ungeschützt ins Internet.
 
-Umgesetzt sind: Passwort als PBKDF2-Hash (`config.json` nur für den Besitzer lesbar),
-signiertes Sitzungs-Cookie mit Ablauf (`HttpOnly`, `SameSite=Strict`), gebremste
-Anmeldeversuche, Herkunftsprüfung bei schreibenden Anfragen und getrennte Cookies für
-Admin und Gäste. Das Gäste-Cookie berechtigt ausschließlich dazu, den **eigenen** Eintrag
-zu ändern.
+Umgesetzt sind trotzdem: Herkunftsprüfung (Origin) bei allen schreibenden Anfragen gegen
+fremde Webseiten, ein signiertes Cookie für die Spieler-Wiedererkennung (`HttpOnly`,
+`SameSite=Lax`, der Signierschlüssel liegt nur für den Besitzer lesbar in `config.json`)
+und eine gebremste Anmeldung über `/mitmachen`, damit dort niemand die Spielerliste
+vollspammen kann. Der Webdienst läuft als eigener Benutzer ohne besondere Rechte; nur die
+Lüftersteuerung braucht root, weil die Schaltpunkte unter `/sys` liegen.
 
-Bewusst ohne Passwort erreichbar sind nur zwei Dinge: die Spieler-Anmeldung (das ist der
-Sinn des QR-Codes, begrenzt auf 100 Spieler mit Drosselung pro Adresse) und die
-Selbstanmeldung eines Bildschirms (begrenzt auf 20). Der Webdienst läuft als eigener
-Benutzer ohne besondere Rechte; nur die Lüftersteuerung braucht root, weil die
-Schaltpunkte unter `/sys` liegen.
+Wer eine echte Zugriffsbeschränkung braucht (offenes Gäste-WLAN, öffentlicher Raum), stellt
+am besten einen Reverse-Proxy mit eigener Anmeldung davor, statt sich auf das Leaderboard
+selbst zu verlassen — dafür ist es nicht gebaut.

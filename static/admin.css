@@ -240,11 +240,3 @@ textarea#info-text {
 }
 #toast.error { border-color: var(--bad); color: var(--bad); }
 #toast.ok { border-color: var(--ok); }
-
-/* --- Anmeldeseite ------------------------------------------------------- */
-.login {
-  max-width: 380px;
-  margin: 12vh auto 0;
-  padding: 1.5rem;
-}
-.login p { color: var(--muted); font-size: 0.85rem; }

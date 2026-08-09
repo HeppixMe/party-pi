@@ -2,9 +2,11 @@
 """
 LAN-Party-Leaderboard - Anzeige- und Steuerserver.
 
-Ein einziger Prozess, ausschliesslich Python-Standardbibliothek.
+Ein einziger Prozess, ausschliesslich Python-Standardbibliothek. Kein
+Passwort, keine Anmeldung - /admin ist offen wie jede andere Seite, damit
+der Einstieg so einfach wie moeglich ist.
 
-Seiten (alle ohne Passwort ausser /admin):
+Seiten:
 
   /                Leaderboard fuer den Fernseher
   /seiten          Uebersicht aller Seiten
@@ -14,7 +16,7 @@ Seiten (alle ohne Passwort ausser /admin):
   /system          Systemstatus des Pi
   /info            Info-Tafel (Text im Admin bearbeitbar)
   /screen/<name>   gesteuerter Bildschirm - zeigt, was der Admin zuweist
-  /admin           Steuerung (Passwort)
+  /admin           Steuerung
 
 Schnittstelle:
 
@@ -23,30 +25,24 @@ Schnittstelle:
   GET  /api/fan      Temperatur und Luefterstufe
   GET  /api/system   Laufzeit, Last, Adresse, verbundene Seiten
   GET  /api/qr.svg   QR-Code der Beitritts-Adresse
-  POST /api/join     Spieler-Anmeldung (ohne Passwort)
-  POST /api/screens/hello  Bildschirm meldet sich (ohne Passwort)
-  POST /api/...      alles Weitere nur mit Admin-Anmeldung
+  POST /api/...      alle Aenderungen, ohne Anmeldung
 
-Zustand liegt in <data>/state.json, Konfiguration (Passwort-Hash, Cookie-Secret)
-in <data>/config.json.
+Zustand liegt in <data>/state.json, das Cookie-Signierschluessel (fuer die
+Spieler-Wiedererkennung) in <data>/config.json.
 
 Start fuer einen schnellen Test auf dem Laptop:
 
     python3 leaderboard.py --port 8000 --data ./data
 
-Passwort setzen (macht auch das Installationsskript):
-
-    python3 leaderboard.py --data ./data --set-password
-
-Sicherheitshinweis: reines HTTP ohne TLS, gedacht fuer das vertrauenswuerdige
-Heim-/Party-Netz. Das Admin-Passwort haelt mitspielende Gaeste davon ab, Punkte
-zu verstellen - es ist kein Schutz gegen einen Angreifer im selben Netz.
+Sicherheitshinweis: reines HTTP ohne TLS und ohne Anmeldung, gedacht fuer das
+vertrauenswuerdige Heim-/Party-Netz. Jeder im selben Netz kann Punkte
+verstellen - genau wie am Spieltisch nebenan. Nichts davon gehoert ungeschuetzt
+ins Internet.
 """
 
 from __future__ import annotations
 
 import argparse
-import getpass
 import hashlib
 import hmac
 import json
@@ -70,8 +66,6 @@ APP_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(APP_DIR, "static")
 
 STATE_VERSION = 2
-SESSION_TTL = 12 * 3600  # Ein Party-Abend ist damit sicher abgedeckt.
-COOKIE_NAME = "lanparty_session"
 PLAYER_COOKIE = "lanparty_player"
 PLAYER_TTL = 48 * 3600
 
@@ -110,9 +104,6 @@ def _valid_view(state: dict, view) -> bool:
         return find_board(state, view[len("/board/"):]) is not None
     return False
 
-
-
-PBKDF2_ITERATIONS = 200_000
 
 TEAM_IDS = ("a", "b")
 
@@ -1111,22 +1102,9 @@ class Auth:
     def _save(self, config: dict) -> None:
         write_json_atomic(self.path, config, mode=0o600)
 
-    @property
-    def has_password(self) -> bool:
-        return bool(self.config.get("password"))
-
-    def set_password(self, password: str) -> None:
-        with self._lock:
-            self.config["password"] = hash_password(password)
-            self._save(self.config)
-
-    def verify(self, password: str) -> bool:
-        record = self.config.get("password")
-        if not record:
-            return False
-        return verify_password(record, password)
-
     # -- Anmeldeversuche bremsen ------------------------------------------
+    # Nur noch fuer die Spieler-Anmeldung (/api/join) gedacht: bremst, wer
+    # dort mit leerem Namen o.ae. die Liste vollzuspammen versucht.
     def note_failure(self, client: str) -> float:
         """Fehlversuche zaehlen und die passende Wartezeit zurueckgeben."""
         with self._lock:
@@ -1151,15 +1129,9 @@ class Auth:
                 self._failures.pop(client, None)
             return False
 
-    # -- Sitzungs-Cookie ---------------------------------------------------
+    # -- Signiertes Cookie fuer die Spieler-Wiedererkennung -----------------
     def _secret_bytes(self) -> bytes:
         return self.config["secret"].encode()
-
-    def make_token(self) -> str:
-        expires = int(time.time()) + SESSION_TTL
-        payload = f"{expires}.{secrets.token_hex(8)}"
-        signature = hmac.new(self._secret_bytes(), payload.encode(), hashlib.sha256).hexdigest()
-        return f"{payload}.{signature}"
 
     def make_value_token(self, value: str, ttl: int) -> str:
         """Signiertes Cookie, das einen Wert traegt - fuer die Spieler-Kennung."""
@@ -1179,44 +1151,6 @@ class Auth:
         if not hmac.compare_digest(signature, expected):
             return None
         return value if as_int(expires, 0) > time.time() else None
-
-    def check_token(self, token) -> bool:
-        if not token or token.count(".") != 2:
-            return False
-        expires, nonce, signature = token.split(".")
-        expected = hmac.new(
-            self._secret_bytes(), f"{expires}.{nonce}".encode(), hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return False
-        return as_int(expires, 0) > time.time()
-
-
-def hash_password(password: str, salt: bytes | None = None) -> dict:
-    salt = salt or secrets.token_bytes(16)
-    derived = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PBKDF2_ITERATIONS)
-    return {
-        "algo": "pbkdf2_sha256",
-        "iterations": PBKDF2_ITERATIONS,
-        "salt": salt.hex(),
-        "hash": derived.hex(),
-    }
-
-
-def verify_password(record: dict, password: str) -> bool:
-    try:
-        salt = bytes.fromhex(record["salt"])
-        iterations = as_int(record.get("iterations"), PBKDF2_ITERATIONS)
-        derived = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-    except (KeyError, ValueError, TypeError):
-        return False
-    return hmac.compare_digest(derived.hex(), record.get("hash", ""))
-
-
-def random_password(length: int = 8) -> str:
-    # Ohne leicht verwechselbare Zeichen - das Passwort wird oft abgetippt.
-    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
-    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
 # ---------------------------------------------------------------------------
@@ -1272,18 +1206,6 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             self._send(status, fh.read(), content_type)
 
-    # -- Anmeldung ---------------------------------------------------------
-    def _is_authed(self) -> bool:
-        header = self.headers.get("Cookie")
-        if not header:
-            return False
-        try:
-            cookies = SimpleCookie(header)
-        except Exception:
-            return False
-        morsel = cookies.get(COOKIE_NAME)
-        return bool(morsel) and self.auth.check_token(morsel.value)
-
     def _same_origin(self) -> bool:
         """
         CSRF-Schutz: schickt der Browser einen Origin-Header, muss er zu diesem
@@ -1295,12 +1217,6 @@ class Handler(BaseHTTPRequestHandler):
             return True
         host = self.headers.get("Host", "")
         return urlparse(origin).netloc == host
-
-    def _require_auth(self) -> bool:
-        if self._is_authed():
-            return True
-        self._error(HTTPStatus.UNAUTHORIZED, "Nicht angemeldet")
-        return False
 
     def _body(self) -> dict:
         """
@@ -1342,10 +1258,6 @@ class Handler(BaseHTTPRequestHandler):
         if path in self.PAGES:
             return self._static(self.PAGES[path])
         if path == "/admin":
-            if not self._is_authed():
-                # 401 mit der Anmeldeseite als Inhalt: der Browser zeigt sie an,
-                # Skripte sehen trotzdem einen sauberen Fehlercode.
-                return self._static("login.html", status=HTTPStatus.UNAUTHORIZED)
             return self._static("admin.html")
         if path.startswith("/screen/"):
             # Der Name steckt im Pfad; die Seite meldet sich selbst per API an.
@@ -1358,8 +1270,6 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/state":
             payload = json.loads(self.store.payload())
-            payload["authed"] = self._is_authed()
-            payload["passwordSet"] = self.auth.has_password
             payload["me"] = self._current_player()
             payload["joinUrl"] = self._join_url()
             return self._json(payload)
@@ -1489,25 +1399,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self._same_origin():
             return self._error(HTTPStatus.FORBIDDEN, "Fremde Herkunft abgelehnt")
 
-        if path == "/api/login":
-            return self._login(body)
-        if path == "/api/logout":
-            return self._json(
-                {"ok": True},
-                extra={
-                    "Set-Cookie": f"{COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
-                },
-            )
-        # Ohne Passwort erreichbar - das ist der Sinn des QR-Codes. Beide
-        # Endpunkte koennen ausschliesslich den eigenen Eintrag bzw. den
-        # Zeitstempel eines Bildschirms setzen, sonst nichts.
         if path == "/api/join":
             return self._join(body)
         if path == "/api/screens/hello":
             return self._screen_hello(body)
-
-        if not self._require_auth():
-            return
 
         now = now_ms()
         try:
@@ -1715,7 +1610,6 @@ class Handler(BaseHTTPRequestHandler):
             )
         raise ValueError(f"Unbekannte Aktion '{action}'")
 
-    # -- Ohne Passwort erreichbar -------------------------------------------
     def _join(self, body: dict):
         """Anmeldung eines Gastes ueber den QR-Code."""
         client = self.address_string()
@@ -1745,21 +1639,6 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as err:
             return self._error(HTTPStatus.BAD_REQUEST, str(err))
         return self._json({"ok": True, "screen": screen})
-
-    def _login(self, body: dict):
-        client = self.address_string()
-        if self.auth.is_blocked(client):
-            return self._error(HTTPStatus.TOO_MANY_REQUESTS, "Zu viele Fehlversuche - kurz warten")
-        password = body.get("password", "")
-        if not isinstance(password, str) or not self.auth.verify(password):
-            time.sleep(self.auth.note_failure(client))
-            return self._error(HTTPStatus.UNAUTHORIZED, "Falsches Passwort")
-        self.auth.note_success(client)
-        token = self.auth.make_token()
-        cookie = (
-            f"{COOKIE_NAME}={token}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; SameSite=Strict"
-        )
-        self._json({"ok": True}, extra={"Set-Cookie": cookie})
 
 
 # ---------------------------------------------------------------------------
@@ -1796,11 +1675,6 @@ def main(argv=None) -> int:
         help="Verzeichnis fuer state.json/config.json",
     )
     parser.add_argument(
-        "--set-password",
-        action="store_true",
-        help="Nur das Admin-Passwort setzen und beenden",
-    )
-    parser.add_argument(
         "--public-url",
         default=os.environ.get("LAN_PUBLIC_URL", ""),
         help="Adresse, die im QR-Code steht (z.B. http://192.168.178.42). "
@@ -1811,26 +1685,7 @@ def main(argv=None) -> int:
     data_dir = os.path.abspath(args.data)
     os.makedirs(data_dir, exist_ok=True)
 
-    if args.set_password:
-        auth = Auth(os.path.join(data_dir, "config.json"))
-        password = os.environ.get("LAN_ADMIN_PASSWORD") or getpass.getpass("Neues Admin-Passwort: ")
-        if not password:
-            sys.stderr.write("Kein Passwort eingegeben - abgebrochen.\n")
-            return 1
-        auth.set_password(password)
-        print("Admin-Passwort gesetzt.")
-        return 0
-
     httpd = build_server(args.host, args.port, data_dir, args.public_url)
-
-    if not httpd.auth.has_password:
-        generated = random_password()
-        httpd.auth.set_password(generated)
-        print("=" * 60)
-        print("  Noch kein Admin-Passwort gesetzt - eines erzeugt:")
-        print(f"      {generated}")
-        print("  Aendern mit:  python3 leaderboard.py --data <dir> --set-password")
-        print("=" * 60)
 
     address = local_ip_address() if args.host in ("0.0.0.0", "") else args.host
     suffix = "" if args.port == 80 else f":{args.port}"

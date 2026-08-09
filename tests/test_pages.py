@@ -2,7 +2,9 @@
 Tests fuer die Seiten, die Spieler-Anmeldung und die Bildschirmsteuerung.
 
 Alles ueber echte HTTP-Aufrufe gegen einen laufenden Server - damit ist auch
-geprueft, dass Cookies, Rechte und Routen wirklich zusammenpassen.
+geprueft, dass Cookies und Routen wirklich zusammenpassen. Es gibt kein
+Admin-Passwort: /admin und alle schreibenden Endpunkte sind offen, das ist
+mit Absicht so einfach wie moeglich gehalten.
 """
 
 import http.client
@@ -27,7 +29,6 @@ class ServerTestCase(unittest.TestCase):
     def setUpClass(cls):
         cls.dir = tempfile.mkdtemp()
         cls.httpd = lb.build_server("127.0.0.1", 0, cls.dir)
-        cls.httpd.auth.set_password("party")
         cls.port = cls.httpd.server_address[1]
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
@@ -66,13 +67,9 @@ class ServerTestCase(unittest.TestCase):
             parsed = raw
         return response.status, parsed, content_type
 
-    def login(self):
-        status, _body, _type = self.request("POST", "/api/login", {"password": "party"})
-        self.assertEqual(status, 200)
-
 
 class PublicPagesTest(ServerTestCase):
-    PUBLIC = ["/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info"]
+    PUBLIC = ["/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/admin"]
 
     def test_every_public_page_is_reachable(self):
         for path in self.PUBLIC:
@@ -102,10 +99,11 @@ class PublicPagesTest(ServerTestCase):
         self.assertNotIn("/", cleaned)
         self.assertNotIn(".", cleaned)
 
-    def test_admin_needs_login(self):
-        self.assertEqual(self.request("GET", "/admin")[0], 401)
-        self.login()
-        self.assertEqual(self.request("GET", "/admin")[0], 200)
+    def test_admin_is_open_without_any_login(self):
+        # Kein Passwort - die Steuerung ist genauso offen wie jede andere Seite.
+        status, body, content_type = self.request("GET", "/admin")
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
 
     def test_unknown_path_is_a_clean_404(self):
         status, body, _type = self.request("GET", "/gibtsnicht")
@@ -196,40 +194,6 @@ class JoinTest(ServerTestCase):
         self.assertEqual((player["wins"], player["losses"]), (0, 0))
 
 
-class PlayerRightsTest(ServerTestCase):
-    """Ein angemeldeter Gast darf ausschliesslich seinen eigenen Eintrag setzen."""
-
-    def setUp(self):
-        super().setUp()
-        self.request("POST", "/api/join", {"name": "Mia", "teamId": "a"})
-        self.assertIn(lb.PLAYER_COOKIE, self.cookies)
-
-    def test_guest_cannot_touch_the_scoring(self):
-        for path, body in (
-            ("/api/sos/level", {"name": "Level 1"}),
-            ("/api/sos/timer", {"team": "a", "action": "start"}),
-            ("/api/smash/result", {"winnerId": "x", "loserId": "y"}),
-            ("/api/reset", {"scope": "all"}),
-            ("/api/sos/teams", {"names": {"a": "Gekapert"}}),
-        ):
-            status, _body, _type = self.request("POST", path, body)
-            self.assertEqual(status, 401, path)
-
-    def test_guest_cannot_steer_screens_or_switches(self):
-        for path, body in (
-            ("/api/screens/assign", {"screenId": "tv", "view": "/qr"}),
-            ("/api/screens/delete", {"screenId": "tv"}),
-            ("/api/display", {"fx": "plain"}),
-            ("/api/fan", {"force": True}),
-            ("/api/info", {"text": "gekapert"}),
-        ):
-            status, _body, _type = self.request("POST", path, body)
-            self.assertEqual(status, 401, path)
-
-    def test_player_cookie_is_not_an_admin_cookie(self):
-        self.assertEqual(self.request("GET", "/admin")[0], 401)
-
-
 class ScreenTest(ServerTestCase):
     def test_screen_registers_itself(self):
         status, body, _type = self.request("POST", "/api/screens/hello", {"id": "tv"})
@@ -254,7 +218,6 @@ class ScreenTest(ServerTestCase):
 
     def test_admin_assigns_a_view(self):
         self.request("POST", "/api/screens/hello", {"id": "tv"})
-        self.login()
         status, body, _type = self.request(
             "POST", "/api/screens/assign", {"screenId": "tv", "view": "/qr"}
         )
@@ -263,14 +226,12 @@ class ScreenTest(ServerTestCase):
 
     def test_unknown_view_is_rejected(self):
         self.request("POST", "/api/screens/hello", {"id": "tv"})
-        self.login()
         status, _body, _type = self.request(
             "POST", "/api/screens/assign", {"screenId": "tv", "view": "/etc/passwd"}
         )
         self.assertEqual(status, 400)
 
     def test_assigning_an_unknown_screen_is_a_404(self):
-        self.login()
         status, _body, _type = self.request(
             "POST", "/api/screens/assign", {"screenId": "gibtsnicht", "view": "/qr"}
         )
@@ -278,7 +239,6 @@ class ScreenTest(ServerTestCase):
 
     def test_admin_can_rename_and_remove(self):
         self.request("POST", "/api/screens/hello", {"id": "tv"})
-        self.login()
         self.request("POST", "/api/screens/rename", {"screenId": "tv", "name": "Wohnzimmer"})
         _status, payload, _type = self.request("GET", "/api/state")
         self.assertEqual(payload["state"]["screens"][0]["name"], "Wohnzimmer")
@@ -296,7 +256,7 @@ class ScreenTest(ServerTestCase):
 
 
 class BoardsPageTest(ServerTestCase):
-    """Eigene Leaderboards ueber die HTTP-Schnittstelle - Rechte, Routen, Sichtbarkeit."""
+    """Eigene Leaderboards ueber die HTTP-Schnittstelle - Routen und Sichtbarkeit."""
 
     def create(self, name="Schach", kind="score", mode="solo"):
         status, body, _type = self.request(
@@ -305,14 +265,7 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(status, 200, body)
         return body["board"]
 
-    def test_create_needs_login(self):
-        status, _body, _type = self.request(
-            "POST", "/api/boards/create", {"name": "X", "kind": "score", "mode": "solo"}
-        )
-        self.assertEqual(status, 401)
-
     def test_board_page_is_public_and_reachable_even_without_a_valid_id(self):
-        self.login()
         board = self.create()
         for path in (f"/board/{board['id']}", "/board/gibtsnicht"):
             status, body, content_type = self.request("GET", path)
@@ -321,7 +274,6 @@ class BoardsPageTest(ServerTestCase):
             self.assertIn(b"</html>", body)
 
     def test_created_board_shows_up_in_state_and_view_list(self):
-        self.login()
         board = self.create("Mario Kart", "race", "teams")
         _status, payload, _type = self.request("GET", "/api/state")
         names = [b["name"] for b in payload["state"]["boards"]]
@@ -330,7 +282,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertIn(f"/board/{board['id']}", paths)
 
     def test_board_can_be_assigned_to_a_screen(self):
-        self.login()
         board = self.create()
         self.request("POST", "/api/screens/hello", {"id": "tv"})
         status, body, _type = self.request(
@@ -340,7 +291,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(body["screen"]["view"], f"/board/{board['id']}")
 
     def test_rename_and_delete(self):
-        self.login()
         board = self.create("Alt")
         self.request("POST", "/api/boards/rename", {"boardId": board["id"], "name": "Neu"})
         _status, payload, _type = self.request("GET", "/api/state")
@@ -352,7 +302,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(payload["state"]["boards"], [])
 
     def test_race_board_full_round(self):
-        self.login()
         board = self.create("Rennen", "race", "teams")
         status, body, _type = self.request(
             "POST", "/api/boards/level", {"boardId": board["id"], "name": "Strecke 1"}
@@ -374,7 +323,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(level["timers"]["a"]["elapsedMs"], 12_000)
 
     def test_score_board_full_round(self):
-        self.login()
         board = self.create("Schach", "score", "teams")
         status, body, _type = self.request(
             "POST", "/api/boards/entrant",
@@ -393,7 +341,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(entrant["teamId"], "a")
 
     def test_reset_only_touches_the_named_board(self):
-        self.login()
         keep = self.create("Bleibt", "score", "solo")
         gone = self.create("Wird geleert", "score", "solo")
         self.request("POST", "/api/boards/entrant", {"boardId": keep["id"], "action": "add", "name": "Mia"})
@@ -412,7 +359,6 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(len(by_id[keep["id"]]["entrants"]), 1)
 
     def test_board_limit_gives_a_clean_error(self):
-        self.login()
         for index in range(lb.MAX_BOARDS):
             self.create(f"Spiel {index}")
         status, body, _type = self.request(
@@ -421,24 +367,9 @@ class BoardsPageTest(ServerTestCase):
         self.assertEqual(status, 400)
         self.assertIn("schon", body["error"])
 
-    def test_guest_cannot_touch_boards(self):
-        self.login()
-        board = self.create()
-        self.cookies.clear()
-        self.request("POST", "/api/join", {"name": "Mia", "teamId": "a"})
-        for path, body in (
-            ("/api/boards/create", {"name": "X", "kind": "score", "mode": "solo"}),
-            ("/api/boards/rename", {"boardId": board["id"], "name": "Gekapert"}),
-            ("/api/boards/delete", {"boardId": board["id"]}),
-            ("/api/boards/entrant", {"boardId": board["id"], "action": "add", "name": "X"}),
-        ):
-            status, _body, _type = self.request("POST", path, body)
-            self.assertEqual(status, 401, path)
-
 
 class SwitchesTest(ServerTestCase):
     def test_effects_can_be_switched(self):
-        self.login()
         self.request("POST", "/api/display", {"fx": "plain"})
         _status, payload, _type = self.request("GET", "/api/state")
         self.assertEqual(payload["state"]["display"]["fx"], "plain")
@@ -447,7 +378,6 @@ class SwitchesTest(ServerTestCase):
         self.assertEqual(status, 400)
 
     def test_fan_switch_writes_the_file_for_the_other_service(self):
-        self.login()
         self.request("POST", "/api/fan", {"force": True})
 
         path = os.path.join(self.dir, "fan-override.json")
@@ -459,7 +389,6 @@ class SwitchesTest(ServerTestCase):
             self.assertFalse(json.load(fh)["force"])
 
     def test_info_text_is_stored_and_shortened(self):
-        self.login()
         self.request("POST", "/api/info", {"text": "WLAN: geheim\nAblauf: 20 Uhr"})
         _status, payload, _type = self.request("GET", "/api/state")
         self.assertIn("WLAN: geheim", payload["state"]["info"]["text"])
