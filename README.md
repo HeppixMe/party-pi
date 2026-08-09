@@ -166,7 +166,10 @@ einfach nicht auf einem Gerät, das Gäste in die Hand bekommen.
 
 Steht an jedem Tisch ein eigener QR-Code, helfen `/mitmachen/a` und `/mitmachen/b`: dieselbe
 Anmeldung, aber ohne Teamwahl — wer darüber eintritt, landet automatisch im jeweiligen
-Team. `/mitmachen` selbst bleibt unverändert mit freier Teamwahl bestehen.
+Team. `/mitmachen` selbst bleibt unverändert mit freier Teamwahl bestehen. Beide Seiten
+stehen auch in der Ansichten-Palette bei *Bildschirme* zur Wahl („Anmeldung Team 1“ /
+„Anmeldung Team 2“, folgt umbenannten Teamnamen) — praktisch für ein Tablet direkt am
+Team-Tisch.
 
 ### Smash
 
@@ -374,7 +377,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 238 Tests, ~10 s
+python3 -m unittest discover -s tests      # 240 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

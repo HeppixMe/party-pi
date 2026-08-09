@@ -257,6 +257,26 @@ class ScreenTest(ServerTestCase):
         self.assertIn("/qr", paths)
         self.assertTrue(all(view["label"] for view in payload["views"]))
 
+    def test_team_join_pages_are_offered_and_assignable(self):
+        _status, payload, _type = self.request("GET", "/api/state")
+        by_path = {view["path"]: view["label"] for view in payload["views"]}
+        self.assertIn("/mitmachen/a", by_path)
+        self.assertIn("/mitmachen/b", by_path)
+        self.assertIn("Team 1", by_path["/mitmachen/a"])
+
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        status, body, _type = self.request(
+            "POST", "/api/screens/assign", {"screenId": "tv", "view": "/mitmachen/a"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["screen"]["view"], "/mitmachen/a")
+
+    def test_team_join_view_label_follows_a_renamed_team(self):
+        self.request("POST", "/api/sos/teams", {"names": {"a": "Die Adler"}})
+        _status, payload, _type = self.request("GET", "/api/state")
+        by_path = {view["path"]: view["label"] for view in payload["views"]}
+        self.assertEqual(by_path["/mitmachen/a"], "Anmeldung Die Adler")
+
 
 class BoardsPageTest(ServerTestCase):
     """Eigene Leaderboards ueber die HTTP-Schnittstelle - Routen und Sichtbarkeit."""

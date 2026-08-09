@@ -105,6 +105,8 @@ def _valid_view(state: dict, view) -> bool:
     bestehendes eigenes Leaderboard bzw. einen geteilten Bildschirm meint."""
     if view in VIEW_PATHS:
         return True
+    if isinstance(view, str) and view.startswith("/mitmachen/"):
+        return view[len("/mitmachen/"):] in TEAM_IDS
     if isinstance(view, str) and view.startswith("/board/"):
         return find_board(state, view[len("/board/"):]) is not None
     if isinstance(view, str) and view.startswith("/split/"):
@@ -662,6 +664,10 @@ class Store:
     def _payload_locked(self) -> str:
         now = now_ms()
         views = [{"path": path, "label": label} for path, label in VIEWS]
+        # Team-spezifische Mitmachseiten (ohne Teamwahl) - Beschriftung folgt
+        # den aktuellen Teamnamen, genau wie bei den Team-Karten oben.
+        for team in self.state["sos"]["teams"]:
+            views.append({"path": f"/mitmachen/{team['id']}", "label": f"Anmeldung {team['name']}"})
         # Eigene Leaderboards tauchen automatisch in der Bildschirm-Palette
         # auf - niemand soll eine Ansicht von Hand eintragen muessen.
         for board in self.state["boards"]:
