@@ -194,7 +194,7 @@ html[data-fx="full"] td.running::after {
 }
 
 .grid tfoot th { text-align: left; color: var(--muted); }
-.grid tfoot td.leader { color: var(--gold); text-shadow: 0 0 0.35em rgba(255, 176, 32, 0.6); }
+.grid tfoot td.leader { color: var(--gold); text-shadow: 0 0 0.2em rgba(255, 200, 80, 0.9), 0 0 0.6em rgba(255, 176, 32, 0.6), 0 0 1.4em rgba(255, 176, 32, 0.3); }
 
 /* Muss .grid tbody td in der Spezifitaet schlagen, sonst erbt der Hinweis
    die grosse Ziffernschrift der Zeitzellen. */
@@ -240,7 +240,7 @@ html[data-fx="full"] td.running::after {
   text-align: center;
 }
 
-.ranking li.gold .rank { color: var(--gold); text-shadow: 0 0 0.35em rgba(255, 176, 32, 0.6); }
+.ranking li.gold .rank { color: var(--gold); text-shadow: 0 0 0.2em rgba(255, 200, 80, 0.9), 0 0 0.6em rgba(255, 176, 32, 0.6), 0 0 1.4em rgba(255, 176, 32, 0.3); }
 .ranking li.silver .rank { color: var(--silver); }
 .ranking li.bronze .rank { color: var(--bronze); }
 

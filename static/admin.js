@@ -350,6 +350,7 @@ function renderBoards() {
 function renderBoardCard(board) {
   const card = document.createElement('div');
   card.className = 'list-item board-card';
+  card.dataset.leaderboard = `board:${board.id}`;
 
   const head = document.createElement('div');
   head.className = 'head';
@@ -677,6 +678,47 @@ $('add-board').addEventListener('click', async () => {
 $('board-name').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') $('add-board').click();
 });
+
+// -- Welches Leaderboard im Admin sichtbar ist --------------------------------
+// Reine Anzeige-Einstellung fuer dieses Geraet (localStorage) - blendet S.O.S.,
+// Smash Bros bzw. einzelne eigene Leaderboards hier aus, wenn es zu viele
+// werden. Wirkt sich nicht auf Bildschirme oder andere Admin-Tabs aus.
+const BOARD_FILTER_KEY = 'lanparty-admin-board-filter';
+
+function renderBoardFilterOptions() {
+  const select = $('board-filter');
+  const wanted = localStorage.getItem(BOARD_FILTER_KEY) || 'all';
+
+  // Feste Optionen bleiben stehen, eigene Leaderboards werden neu aufgebaut -
+  // sonst geht bei jedem Zustandsschub die gerade offene Auswahlliste zu.
+  for (const option of [...select.options]) {
+    if (option.value.startsWith('board:')) option.remove();
+  }
+  for (const board of state?.boards || []) {
+    const option = document.createElement('option');
+    option.value = `board:${board.id}`;
+    option.textContent = board.name;
+    select.append(option);
+  }
+
+  // Zeigte die Auswahl ein inzwischen geloeschtes Leaderboard, zurueck auf
+  // "Alle" - sonst waere die Seite scheinbar leer, ohne dass klar ist, warum.
+  const stillValid = [...select.options].some((o) => o.value === wanted);
+  select.value = stillValid ? wanted : 'all';
+  if (!stillValid) localStorage.setItem(BOARD_FILTER_KEY, 'all');
+}
+
+function applyBoardFilter() {
+  const value = $('board-filter').value;
+  for (const el of document.querySelectorAll('[data-leaderboard]')) {
+    el.hidden = value !== 'all' && el.dataset.leaderboard !== value;
+  }
+}
+
+$('board-filter').addEventListener('change', () => {
+  localStorage.setItem(BOARD_FILTER_KEY, $('board-filter').value);
+  applyBoardFilter();
+});
 // Ein Zeitrennen braucht zwei vergleichbare Bahnen - der Modus ist bei
 // "Rennen" deshalb immer "Teams", die Auswahl wird gesperrt statt eine
 // Kombination anzubieten, die es serverseitig gar nicht gibt.
@@ -859,6 +901,8 @@ connectEvents({
       renderBoards();
       renderScreenBlock(payload);
       renderSettings();
+      renderBoardFilterOptions();
+      applyBoardFilter();
     });
   },
   onStatus: (online) => {

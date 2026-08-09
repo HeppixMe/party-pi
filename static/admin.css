@@ -32,6 +32,27 @@ h3 {
 .topbar-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .topbar-actions .badge { font-size: 0.75rem; }
 
+/* --- Auswahl, welches Leaderboard im Admin sichtbar ist ------------------ */
+.board-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+}
+.board-filter label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.board-filter select { width: auto; min-width: 12rem; }
+.board-filter .hint { margin: 0; }
+
 .layout {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));

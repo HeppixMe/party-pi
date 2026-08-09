@@ -186,6 +186,12 @@ ein Leaderboard wieder vollständig (Bildschirme, die es gerade zeigten, fallen 
 Haupt-Leaderboard zurück); **„Level leeren"** bzw. **„Punkte auf 0"** setzt nur den Inhalt
 dieses einen Leaderboards zurück, ohne die anderen zu berühren.
 
+Werden es viele Leaderboards, hilft **„Im Admin anzeigen"** oben auf der Steuerseite: damit
+lässt sich gezielt nur S.O.S., nur Smash Bros oder nur ein bestimmtes eigenes Leaderboard
+einblenden — die anderen bleiben aus dem Weg, ohne dass sich an den Bildschirmen etwas
+ändert. Rein eine Anzeige-Einstellung für dieses Gerät (gespeichert im Browser), nichts
+davon wird mit anderen Admin-Tabs geteilt.
+
 ### Bildschirme steuern
 
 Auf dem Gerät einmal `http://<pi>/screen/tv` öffnen — der Name ist frei wählbar. Der

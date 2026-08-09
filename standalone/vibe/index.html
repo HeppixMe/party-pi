@@ -42,7 +42,12 @@ canvas { display: block; position: fixed; inset: 0; }
 .overlay.hidden { opacity: 0; pointer-events: none; }
 .overlay h1 {
   margin: 0; font-size: clamp(2rem, 7vw, 4rem); letter-spacing: 0.15em;
-  color: var(--team-a); text-shadow: 0 0 0.6em rgba(255, 122, 24, 0.6);
+  color: var(--team-a);
+  text-shadow:
+    0 0 0.15em rgba(255, 200, 100, 0.95),
+    0 0 0.45em rgba(255, 122, 24, 0.85),
+    0 0 1.1em rgba(255, 122, 24, 0.55),
+    0 0 2.4em rgba(255, 122, 24, 0.3);
 }
 .overlay p { margin: 0; color: var(--muted); max-width: 34rem; line-height: 1.5; }
 .overlay .row { display: flex; gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
@@ -51,10 +56,12 @@ button {
   background: transparent; color: var(--text);
   border: 1px solid var(--team-a); border-radius: 3px;
   padding: 0.7rem 1.3rem; letter-spacing: 0.05em;
+  box-shadow: 0 0 14px rgba(255, 122, 24, 0.3);
+  transition: box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-button:hover { background: var(--team-a); color: #180a00; }
-button.alt { border-color: var(--muted); color: var(--muted); }
-button.alt:hover { background: var(--muted); color: #180a00; }
+button:hover { background: var(--team-a); color: #180a00; box-shadow: 0 0 26px rgba(255, 122, 24, 0.7); }
+button.alt { border-color: var(--muted); color: var(--muted); box-shadow: none; }
+button.alt:hover { background: var(--muted); color: #180a00; box-shadow: 0 0 20px rgba(168, 123, 88, 0.5); }
 
 .hud {
   position: fixed; left: 1rem; bottom: 1rem;
@@ -65,7 +72,7 @@ button.alt:hover { background: var(--muted); color: #180a00; }
 }
 body.show-hud .hud { opacity: 1; }
 .hud .dot { width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--muted); }
-.hud .dot.live { background: var(--accent-2); box-shadow: 0 0 0.6em var(--accent-2); }
+.hud .dot.live { background: var(--accent-2); box-shadow: 0 0 0.4em var(--accent-2), 0 0 1em rgba(255, 176, 32, 0.6); }
 
 .controls {
   position: fixed; right: 1rem; bottom: 1rem;
@@ -229,22 +236,40 @@ function draw() {
 
   // Nachleuchtender Hintergrund statt komplettem Loeschen - erzeugt die
   // sanften Schweife der Partikel.
-  ctx.fillStyle = `rgba(10, 7, 5, ${0.16 + bass * 0.08})`;
+  ctx.fillStyle = `rgba(10, 7, 5, ${0.14 + bass * 0.06})`;
   ctx.fillRect(0, 0, width, height);
 
-  // Pulsierender Ring in der Mitte, Radius/Helligkeit an Bass gekoppelt.
+  // Raumfuellender Grundschein: ein riesiger, weicher Schein ueber den
+  // ganzen Bildschirm, der mit dem Bass pulsiert - soll wie warmes Licht
+  // wirken, das den ganzen Raum erreicht, nicht nur die Mitte des Screens.
   const cx = width / 2, cy = height / 2;
-  const baseR = Math.min(width, height) * (0.14 + bass * 0.10);
+  const roomR = Math.max(width, height) * (0.62 + bass * 0.18);
+  const roomGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, roomR);
+  roomGrad.addColorStop(0, mixColor(0.6 + bass * 0.3, 0.16 + bass * 0.22));
+  roomGrad.addColorStop(0.55, mixColor(0.4, 0.08 + bass * 0.10));
+  roomGrad.addColorStop(1, mixColor(0.2, 0));
+  ctx.fillStyle = roomGrad;
+  ctx.fillRect(0, 0, width, height);
+
+  // Pulsierender Ring in der Mitte, Radius/Helligkeit an Bass gekoppelt,
+  // mit echtem Leucht-Blur (shadowBlur) statt nur einem Farbverlauf.
+  const baseR = Math.min(width, height) * (0.15 + bass * 0.11);
+  ctx.save();
+  ctx.shadowColor = mixColor(0.55 + bass * 0.3, 1);
+  ctx.shadowBlur = 70 + bass * 140;
   const ringGrad = ctx.createRadialGradient(cx, cy, baseR * 0.2, cx, cy, baseR);
   ringGrad.addColorStop(0, mixColor(0.5, 0.0));
-  ringGrad.addColorStop(0.7, mixColor(bass, 0.25 + bass * 0.35));
+  ringGrad.addColorStop(0.7, mixColor(bass, 0.35 + bass * 0.45));
   ringGrad.addColorStop(1, mixColor(bass, 0));
   ctx.fillStyle = ringGrad;
   ctx.beginPath();
   ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 
-  // Partikel: Farbe nach Frequenzband, Groesse/Leuchtkraft nach Energie.
+  // Partikel: Farbe nach Frequenzband, Groesse/Leuchtkraft nach Energie -
+  // jeder mit eigenem Schein statt einer harten Kante.
+  ctx.save();
   for (const p of particles) {
     if (!paused) {
       p.x += p.vx; p.y += p.vy;
@@ -254,21 +279,30 @@ function draw() {
     const e = bands[p.band];
     const px = p.x * width, py = p.y * height;
     const r = p.r + e * 6;
+    ctx.shadowColor = mixColor(p.hue, 1);
+    ctx.shadowBlur = 10 + e * 26;
     ctx.beginPath();
-    ctx.fillStyle = mixColor(p.hue, 0.35 + e * 0.6);
+    ctx.fillStyle = mixColor(p.hue, 0.45 + e * 0.55);
     ctx.arc(px, py, r, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
 
-  // Spektrum-Balken am unteren Rand - der klassische Visualizer-Blick.
+  // Spektrum-Balken am unteren Rand - der klassische Visualizer-Blick,
+  // mit Schein nach oben, als wuerde dort Licht aus dem Boden kommen.
   const barCount = bands.length;
   const barW = width / barCount;
+  ctx.save();
+  ctx.shadowBlur = 22;
   for (let i = 0; i < barCount; i++) {
     const e = bands[i];
-    const h = 6 + e * height * 0.22;
-    ctx.fillStyle = mixColor(i / barCount, 0.55 + e * 0.4);
+    const h = 6 + e * height * 0.24;
+    const color = mixColor(i / barCount, 0.6 + e * 0.4);
+    ctx.shadowColor = color;
+    ctx.fillStyle = color;
     ctx.fillRect(i * barW + 1, height - h, barW - 2, h);
   }
+  ctx.restore();
 
   requestAnimationFrame(draw);
 }

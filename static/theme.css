@@ -32,8 +32,18 @@
   --silver: #d8d8e8;
   --bronze: #c4703a;
 
-  --glow: 0 0 0.35em rgba(255, 122, 24, 0.55);
-  --glow-b: 0 0 0.35em rgba(0, 229, 255, 0.5);
+  /* Mehrschichtiges Leuchten (nah/mittel/fern) statt eines einzelnen
+     Schlagschattens - so wirkt es wie echtes Bloom statt eines duennen
+     Rands. Nur statisch gesetzt, nie animiert (siehe Hinweis oben). */
+  --glow: 0 0 0.18em rgba(255, 176, 32, 0.9),
+          0 0 0.5em rgba(255, 122, 24, 0.75),
+          0 0 1.3em rgba(255, 122, 24, 0.45),
+          0 0 2.6em rgba(255, 122, 24, 0.22);
+  --glow-b: 0 0 0.18em rgba(150, 245, 255, 0.9),
+            0 0 0.5em rgba(0, 229, 255, 0.7),
+            0 0 1.3em rgba(0, 229, 255, 0.4),
+            0 0 2.6em rgba(0, 229, 255, 0.2);
+  --glow-soft: 0 0 1.6em rgba(255, 122, 24, 0.35);
 
   --mono: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono",
           ui-monospace, "Courier New", monospace;
@@ -53,6 +63,22 @@ html, body {
 
 body { min-height: 100vh; }
 
+/* --- Hintergrund: warmer Grundschein ------------------------------------- */
+/* Ein grosser, statischer Glanz aus den Ecken auf einer eigenen Ebene
+   (html statt body, weil body::before/::after schon fuer Gitter und
+   Scanlines vergeben sind) - fuellt den Bildschirmrand mit Orange, wie
+   Licht, das den Raum erreicht. Rein statisch, nie animiert. */
+html::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 70% 55% at 12% -10%, rgba(255, 122, 24, 0.22), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 105% 105%, rgba(255, 122, 24, 0.16), transparent 60%);
+}
+
 /* --- Hintergrund: Gitterraster ------------------------------------------ */
 body::before {
   content: "";
@@ -60,10 +86,10 @@ body::before {
   inset: -50% 0 -50% 0;
   pointer-events: none;
   z-index: 0;
-  opacity: 0.5;
+  opacity: 0.55;
   background-image:
-    linear-gradient(rgba(255, 122, 24, 0.09) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 122, 24, 0.09) 1px, transparent 1px);
+    linear-gradient(rgba(255, 150, 60, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 150, 60, 0.12) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 
@@ -151,10 +177,11 @@ html[data-fx="full"] .flicker {
 .panel {
   position: relative;
   background: var(--bg-panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-hot);
   box-shadow:
-    inset 0 0 40px rgba(255, 122, 24, 0.05),
-    0 0 24px rgba(255, 122, 24, 0.08);
+    inset 0 0 50px rgba(255, 122, 24, 0.10),
+    0 0 30px rgba(255, 122, 24, 0.20),
+    0 0 70px rgba(255, 122, 24, 0.10);
   clip-path: polygon(
     var(--bevel) 0, 100% 0,
     100% calc(100% - var(--bevel)), calc(100% - var(--bevel)) 100%,
@@ -162,7 +189,10 @@ html[data-fx="full"] .flicker {
   );
 }
 
-/* Kurze Eckmarkierungen - macht aus dem Kasten ein HUD-Element. */
+/* Kurze Eckmarkierungen - macht aus dem Kasten ein HUD-Element. Das Leuchten
+   sitzt auf filter statt box-shadow: box-shadow folgt dem ganzen (leeren)
+   22x22-Kasten und ergaebe einen viereckigen Klecks, drop-shadow dagegen
+   folgt der tatsaechlich sichtbaren L-Form der beiden Randlinien. */
 .panel::before,
 .panel::after {
   content: "";
@@ -171,7 +201,8 @@ html[data-fx="full"] .flicker {
   height: 22px;
   pointer-events: none;
   border: 2px solid var(--accent);
-  opacity: 0.8;
+  filter: drop-shadow(0 0 4px var(--accent)) drop-shadow(0 0 9px rgba(255, 122, 24, 0.7));
+  opacity: 0.9;
 }
 
 .panel::before {
@@ -215,12 +246,24 @@ button.primary {
   border-color: var(--accent);
   color: #180a00;
   font-weight: 700;
+  box-shadow: 0 0 16px rgba(255, 122, 24, 0.55), 0 0 40px rgba(255, 122, 24, 0.25);
 }
-button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); color: #180a00; }
+button.primary:hover:not(:disabled) {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+  color: #180a00;
+  box-shadow: 0 0 20px rgba(255, 176, 32, 0.75), 0 0 50px rgba(255, 176, 32, 0.35);
+}
 
 button.ghost { background: transparent; color: var(--muted); }
 button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
-button.running { background: var(--ok); border-color: var(--ok); color: #04180d; font-weight: 700; }
+button.running {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #04180d;
+  font-weight: 700;
+  box-shadow: 0 0 16px rgba(77, 255, 159, 0.5);
+}
 
 input, select, textarea { width: 100%; }
 input:focus, select:focus, textarea:focus, button:focus-visible {
@@ -262,8 +305,8 @@ html[data-fx="full"] .glitch {
 .badge.online { color: var(--ok); border-color: var(--ok); }
 .badge.offline { color: var(--bad); border-color: var(--bad); }
 
-.team-a { color: var(--team-a); }
-.team-b { color: var(--team-b); }
+.team-a { color: var(--team-a); text-shadow: var(--glow); }
+.team-b { color: var(--team-b); text-shadow: var(--glow-b); }
 
 a { color: var(--accent); }
 

@@ -18,9 +18,19 @@
     </div>
   </header>
 
+  <div class="board-filter">
+    <label for="board-filter">Im Admin anzeigen</label>
+    <select id="board-filter">
+      <option value="all">Alle Leaderboards</option>
+      <option value="sos">Nur S.O.S.</option>
+      <option value="smash">Nur Smash Bros</option>
+    </select>
+    <span class="hint">blendet die anderen Leaderboards hier aus - auf den Bildschirmen ändert sich nichts</span>
+  </div>
+
   <div class="layout">
     <!-- ------------------------------------------------------------- SOS -->
-    <section class="panel">
+    <section class="panel" data-leaderboard="sos">
       <h2>S.O.S.</h2>
 
       <div class="two-col">
@@ -76,7 +86,7 @@
     </section>
 
     <!-- ----------------------------------------------------------- Smash -->
-    <section class="panel">
+    <section class="panel" data-leaderboard="smash">
       <h2>Smash Bros</h2>
 
       <div class="row">
