@@ -228,6 +228,55 @@ body {
 .page-list .path { display: block; color: var(--muted); font-size: 0.85rem; margin: 0.2rem 0 0.5rem; }
 .page-list .what { display: block; font-size: 0.9rem; line-height: 1.45; }
 
+/* --- Fernbedienung: Kurzbefehle antippen --------------------------------- */
+.remote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: clamp(0.6rem, 1.5vw, 1.2rem);
+}
+
+.remote-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 6rem;
+  padding: 1rem;
+  font-family: inherit;
+  font-size: clamp(0.95rem, 2vh, 1.2rem);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--line-hot);
+  box-shadow: 0 0 14px rgba(255, 122, 24, 0.25);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+}
+.remote-btn:hover { box-shadow: 0 0 26px rgba(255, 122, 24, 0.55); }
+.remote-btn:active { transform: scale(0.97); }
+.remote-btn:disabled { opacity: 0.5; cursor: wait; }
+.remote-btn .steps { font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--muted); font-size: 0.8em; }
+
+/* Meldung unten - dieselbe Optik wie im Admin (admin.css), hier fuer alle
+   kleinen Seiten verfuegbar, die einen Toast zeigen wollen. */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.2rem;
+  transform: translateX(-50%);
+  z-index: 150;
+  background: var(--bg-panel);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 0.6rem 1rem;
+  max-width: 90vw;
+}
+#toast.error { border-color: var(--bad); color: var(--bad); }
+#toast.ok { border-color: var(--ok); }
+
 /* --- Spieler-Anmeldung (Handy) ------------------------------------------ */
 .join {
   max-width: 30rem;

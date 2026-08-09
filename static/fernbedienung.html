@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fernbedienung – LAN-Party</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+  <header class="page-head">
+    <h1>Fernbedienung</h1>
+    <span class="badge" id="conn">verbinde…</span>
+  </header>
+
+  <div class="page-body">
+    <p class="subtle">Kurzbefehl antippen, um ihn sofort auszuführen</p>
+    <div class="remote-grid" id="remote-grid"></div>
+    <p class="empty" id="remote-empty" hidden>
+      Noch keine Kurzbefehle angelegt – unter <a href="/kurzbefehle">/kurzbefehle</a> einrichten.
+    </p>
+  </div>
+
+  <div id="toast" hidden></div>
+  <script type="module" src="/static/fernbedienung.js"></script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 // auf Knopfdruck; bis dahin lebt er nur hier im Browser (state.shortcuts vom
 // Server aendert sich currently nicht deswegen automatisch mit).
 
-import { api, connectEvents, withFocusPreserved } from '/static/common.js';
+import { api, connectEvents, shortcutNeedsNamePrompt, withFocusPreserved } from '/static/common.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -152,7 +152,7 @@ const BLOCK_DEFS = {
   start_level: {
     label: 'SOS-Level starten',
     hint: 'legt ein neues Level im eingebauten SOS-Rennen an',
-    make: () => ({ type: 'start_level', name: '', autostart: false }),
+    make: () => ({ type: 'start_level', name: '', autostart: false, promptName: false }),
     fields(step, index) {
       const wrap = document.createElement('div');
       wrap.className = 'block-fields';
@@ -160,6 +160,8 @@ const BLOCK_DEFS = {
         textField(step.name, 'Levelname (optional)', `shortcut-level-name-${index}`, (v) => { step.name = v; }),
         checkboxField(step.autostart, 'Uhren sofort starten', (v) => { step.autostart = v; }),
         hintSpan('sonst warten die Uhren auf den Baustein „SOS-Uhren starten“ oder den Start-Knopf im Admin'),
+        checkboxField(step.promptName, 'beim Aufruf erst nach dem Levelnamen fragen', (v) => { step.promptName = v; }),
+        hintSpan('/run/... zeigt dann zuerst eine kleine Eingabeseite - der Levelname oben wird in dem Fall ignoriert'),
       );
       return wrap;
     },
@@ -178,7 +180,7 @@ const BLOCK_DEFS = {
   board_start_level: {
     label: 'Level in eigenem Leaderboard starten',
     hint: 'legt ein Level in einem selbst angelegten Renn-Leaderboard an',
-    make: () => ({ type: 'board_start_level', boardId: '', name: '', autostart: false }),
+    make: () => ({ type: 'board_start_level', boardId: '', name: '', autostart: false, promptName: false }),
     fields(step, index) {
       const wrap = document.createElement('div');
       wrap.className = 'block-fields';
@@ -193,6 +195,8 @@ const BLOCK_DEFS = {
         textField(step.name, 'Levelname (optional)', `shortcut-board-level-name-${index}`, (v) => { step.name = v; }),
         checkboxField(step.autostart, 'Uhren sofort starten', (v) => { step.autostart = v; }),
         hintSpan('sonst warten die Uhren auf den Baustein „Uhren in eigenem Leaderboard starten“ oder den Start-Knopf im Admin'),
+        checkboxField(step.promptName, 'beim Aufruf erst nach dem Levelnamen fragen', (v) => { step.promptName = v; }),
+        hintSpan('/run/... zeigt dann zuerst eine kleine Eingabeseite - der Levelname oben wird in dem Fall ignoriert'),
       );
       return wrap;
     },
@@ -480,7 +484,10 @@ function renderShortcutList() {
     const urlInput = document.createElement('input');
     urlInput.type = 'text';
     urlInput.readOnly = true;
-    urlInput.value = `${location.origin}/run/${shortcut.id}`;
+    // Die Adresse nutzt den Namen, nicht die Id - liest sich selbst erklaerend
+    // (/run/Party-Start). Bei Namensgleichheit zaehlt beim Ausfuehren einfach
+    // der erste Treffer (siehe find_shortcut_by_id_or_name im Server).
+    urlInput.value = `${location.origin}/run/${encodeURIComponent(shortcut.name)}`;
     urlInput.addEventListener('click', () => urlInput.select());
     const copyBtn = mkBtn('Kopieren', async () => {
       try {
@@ -497,6 +504,13 @@ function renderShortcutList() {
     buttons.className = 'row';
     buttons.append(
       mkBtn('Jetzt ausführen', async () => {
+        // Fragt der Kurzbefehl vor dem Levelstart erst nach einem Namen,
+        // muss diese Seite dorthin wechseln, statt still im Hintergrund
+        // abzurufen - sonst sieht niemand die Eingabeseite.
+        if (shortcutNeedsNamePrompt(shortcut)) {
+          location.href = `/run/${shortcut.id}`;
+          return;
+        }
         await fetch(`/run/${shortcut.id}`);
         toast(`„${shortcut.name}“ ausgeführt`);
       }, 'primary small'),

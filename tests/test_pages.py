@@ -69,7 +69,10 @@ class ServerTestCase(unittest.TestCase):
 
 
 class PublicPagesTest(ServerTestCase):
-    PUBLIC = ["/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/admin", "/kurzbefehle"]
+    PUBLIC = [
+        "/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/vibe",
+        "/admin", "/kurzbefehle", "/fernbedienung", "/mitmachen/a", "/mitmachen/b",
+    ]
 
     def test_every_public_page_is_reachable(self):
         for path in self.PUBLIC:
@@ -368,6 +371,100 @@ class BoardsPageTest(ServerTestCase):
         self.assertIn("schon", body["error"])
 
 
+class SplitsPageTest(ServerTestCase):
+    """Geteilte Bildschirme (zwei Ansichten nebeneinander) ueber HTTP."""
+
+    def create(self, name="Split", left="/", right="/qr"):
+        status, body, _type = self.request(
+            "POST", "/api/splits/create", {"name": name, "left": left, "right": right}
+        )
+        self.assertEqual(status, 200, body)
+        return body["split"]
+
+    def test_split_page_is_public_and_reachable_even_without_a_valid_id(self):
+        split = self.create()
+        for path in (f"/split/{split['id']}", "/split/gibtsnicht"):
+            status, body, content_type = self.request("GET", path)
+            self.assertEqual(status, 200, path)
+            self.assertIn("text/html", content_type)
+            self.assertIn(b"</html>", body)
+
+    def test_created_split_shows_up_in_state_and_view_list(self):
+        split = self.create("Leaderboard + QR", "/", "/qr")
+        _status, payload, _type = self.request("GET", "/api/state")
+        names = [s["name"] for s in payload["state"]["splits"]]
+        self.assertIn("Leaderboard + QR", names)
+        paths = [v["path"] for v in payload["views"]]
+        self.assertIn(f"/split/{split['id']}", paths)
+
+    def test_split_can_be_assigned_to_a_screen(self):
+        split = self.create()
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        status, body, _type = self.request(
+            "POST", "/api/screens/assign", {"screenId": "tv", "view": f"/split/{split['id']}"}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["screen"]["view"], f"/split/{split['id']}")
+
+    def test_rename_and_change_sides_and_delete(self):
+        split = self.create("Alt")
+        self.request("POST", "/api/splits/rename", {"splitId": split["id"], "name": "Neu"})
+        self.request("POST", "/api/splits/sides", {"splitId": split["id"], "left": "/teams", "right": "/info"})
+        _status, payload, _type = self.request("GET", "/api/state")
+        stored = payload["state"]["splits"][0]
+        self.assertEqual(stored["name"], "Neu")
+        self.assertEqual(stored["left"], "/teams")
+        self.assertEqual(stored["right"], "/info")
+
+        status, _body, _type = self.request("POST", "/api/splits/delete", {"splitId": split["id"]})
+        self.assertEqual(status, 200)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["splits"], [])
+
+    def test_a_split_cannot_show_another_split(self):
+        first = self.create("Erster")
+        status, body, _type = self.request(
+            "POST", "/api/splits/create",
+            {"name": "Zweiter", "left": f"/split/{first['id']}", "right": "/"},
+        )
+        self.assertEqual(status, 400, body)
+
+    def test_a_split_cannot_show_an_unknown_board(self):
+        status, body, _type = self.request(
+            "POST", "/api/splits/create",
+            {"name": "Kaputt", "left": "/board/gibtsnicht", "right": "/"},
+        )
+        self.assertEqual(status, 400, body)
+
+    def test_deleting_a_board_frees_split_sides_showing_it(self):
+        status, body, _type = self.request(
+            "POST", "/api/boards/create", {"name": "Schach", "kind": "score", "mode": "solo"}
+        )
+        board = body["board"]
+        split = self.create("Mit Board", f"/board/{board['id']}", "/")
+        self.request("POST", "/api/boards/delete", {"boardId": board["id"]})
+        _status, payload, _type = self.request("GET", "/api/state")
+        stored = next(s for s in payload["state"]["splits"] if s["id"] == split["id"])
+        self.assertEqual(stored["left"], "/")
+
+    def test_deleting_a_split_frees_the_screens_showing_it(self):
+        split = self.create()
+        self.request("POST", "/api/screens/hello", {"id": "tv"})
+        self.request("POST", "/api/screens/assign", {"screenId": "tv", "view": f"/split/{split['id']}"})
+        self.request("POST", "/api/splits/delete", {"splitId": split["id"]})
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["screens"][0]["view"], "/")
+
+    def test_split_limit_gives_a_clean_error(self):
+        for index in range(lb.MAX_SPLITS):
+            self.create(f"Split {index}")
+        status, body, _type = self.request(
+            "POST", "/api/splits/create", {"name": "Zu viel", "left": "/", "right": "/qr"}
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("schon", body["error"])
+
+
 class ShortcutsPageTest(ServerTestCase):
     """Kurzbefehle ueber die HTTP-Schnittstelle: Baukasten-Seite, CRUD, /run/<id>."""
 
@@ -468,6 +565,84 @@ class ShortcutsPageTest(ServerTestCase):
         )
         self.assertEqual(status, 400)
         self.assertIn("schon", body["error"])
+
+    def test_run_by_name_works_just_like_by_id(self):
+        self.create("Party-Start", [{"type": "set_fx", "fx": "plain"}])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/run/Party-Start")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 302)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["display"]["fx"], "plain")
+
+    def test_run_by_name_url_encodes_spaces(self):
+        self.create("Party Start", [{"type": "set_fx", "fx": "plain"}])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/run/Party%20Start")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 302)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["display"]["fx"], "plain")
+
+    def test_duplicate_names_run_the_first_match(self):
+        first = self.create("Zwilling", [{"type": "set_fx", "fx": "plain"}])
+        self.create("Zwilling", [{"type": "set_fx", "fx": "full"}])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", "/run/Zwilling")
+        connection.getresponse().read()
+        connection.close()
+        _status, payload, _type = self.request("GET", "/api/state")
+        # Der zuerst angelegte steht in der Liste vorn (neuester zuerst
+        # heisst: der zweite "Zwilling" landet vor dem ersten) - wichtig ist
+        # nur, dass irgendein eindeutiges Ergebnis herauskommt, nicht welches.
+        self.assertEqual(payload["state"]["display"]["fx"], "full")
+        self.assertEqual(payload["state"]["shortcuts"][1]["id"], first["id"])
+
+    def test_level_name_prompt_shows_a_form_instead_of_running(self):
+        shortcut = self.create("Level mit Frage", [
+            {"type": "start_level", "name": "", "autostart": False, "promptName": True},
+        ])
+        status, body, content_type = self.request("GET", f"/run/{shortcut['id']}")
+        self.assertEqual(status, 200)
+        self.assertIn("text/html", content_type)
+        self.assertIn(b"<form", body)
+        self.assertIn(b"Level mit Frage", body)
+        # Ohne Namen ausgefuehrt: kein Level angelegt, es kam ja nur das Formular.
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["sos"]["levels"], [])
+
+    def test_level_name_prompt_runs_with_the_submitted_name(self):
+        shortcut = self.create("Level mit Frage", [
+            {"type": "start_level", "name": "", "autostart": False, "promptName": True},
+        ])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", f"/run/{shortcut['id']}?name=Boss-Kampf")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 302)
+
+        _status, payload, _type = self.request("GET", "/api/state")
+        levels = payload["state"]["sos"]["levels"]
+        self.assertEqual(len(levels), 1)
+        self.assertEqual(levels[0]["name"], "Boss-Kampf")
+
+    def test_level_name_prompt_without_promptname_runs_immediately(self):
+        shortcut = self.create("Normal", [
+            {"type": "start_level", "name": "Fest", "autostart": False, "promptName": False},
+        ])
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        connection.request("GET", f"/run/{shortcut['id']}")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 302)
+        _status, payload, _type = self.request("GET", "/api/state")
+        self.assertEqual(payload["state"]["sos"]["levels"][0]["name"], "Fest")
 
 
 class SwitchesTest(ServerTestCase):

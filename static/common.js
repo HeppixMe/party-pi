@@ -137,6 +137,19 @@ export function playersOfTeam(state, teamId) {
   return sortPlayers((state?.players || []).filter((p) => p.teamId === teamId));
 }
 
+/**
+ * Wahr, wenn /run/<id> fuer diesen Kurzbefehl erst eine kleine
+ * Eingabeseite fuer den Levelnamen zeigt, statt sofort auszufuehren
+ * (siehe shortcut_needs_name_prompt() im Server). Wer das per Fetch statt
+ * per Seitenwechsel aufruft (Kurzbefehl-Liste, Fernbedienung), muss dann
+ * stattdessen navigieren, damit die Eingabeseite ueberhaupt zu sehen ist.
+ */
+export function shortcutNeedsNamePrompt(shortcut) {
+  return (shortcut.steps || []).some(
+    (step) => step.promptName && (step.type === 'start_level' || step.type === 'board_start_level'),
+  );
+}
+
 /** Smash-Rangliste: meiste Siege, dann bessere Quote, dann weniger Niederlagen. */
 export function sortPlayers(players) {
   return [...(players || [])].sort((x, y) => {

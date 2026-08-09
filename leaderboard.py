@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import html
 import json
 import mimetypes
 import os
@@ -58,7 +59,7 @@ import time
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import qr
 
@@ -74,6 +75,7 @@ MAX_SCREENS = 20
 MAX_BOARDS = 16
 MAX_SHORTCUTS = 30
 MAX_STEPS_PER_SHORTCUT = 40
+MAX_SPLITS = 16
 SCREEN_OFFLINE_AFTER = 120_000  # ms ohne Lebenszeichen -> als offline anzeigen
 
 DEFAULT_INFO_TEXT = (
@@ -92,6 +94,7 @@ VIEWS = (
     ("/teams", "Kader"),
     ("/system", "Systemstatus"),
     ("/info", "Info-Tafel"),
+    ("/vibe", "Vibe (Deko)"),
 )
 VIEW_PATHS = {path for path, _label in VIEWS}
 SSE_HEARTBEAT = 15.0
@@ -99,12 +102,24 @@ SSE_HEARTBEAT = 15.0
 
 def _valid_view(state: dict, view) -> bool:
     """Eine Ansicht ist gueltig, wenn sie fest verdrahtet ist oder ein
-    bestehendes eigenes Leaderboard meint."""
+    bestehendes eigenes Leaderboard bzw. einen geteilten Bildschirm meint."""
     if view in VIEW_PATHS:
         return True
     if isinstance(view, str) and view.startswith("/board/"):
         return find_board(state, view[len("/board/"):]) is not None
+    if isinstance(view, str) and view.startswith("/split/"):
+        return find_split(state, view[len("/split/"):]) is not None
     return False
+
+
+def _valid_split_side(state: dict, view) -> bool:
+    """Eine Haelfte eines geteilten Bildschirms darf alles zeigen, was auch
+    ein normaler Bildschirm zeigen kann - nur keinen weiteren geteilten
+    Bildschirm, sonst koennten sich Splits gegenseitig oder sich selbst
+    einbetten."""
+    if isinstance(view, str) and view.startswith("/split/"):
+        return False
+    return _valid_view(state, view)
 
 
 def _valid_display_active(state: dict, active) -> bool:
@@ -225,6 +240,9 @@ def default_state() -> dict:
         # Kurzbefehle: gespeicherte Bausteinfolgen, jeweils per GET /run/<id>
         # ausloesbar (Lesezeichen, Handy-Homescreen, Stream Deck, ...).
         "shortcuts": [],
+        # Geteilte Bildschirme: eine Ansicht links, eine rechts, als eigene
+        # waehlbare Ansicht "/split/<id>" in der Bildschirm-Palette.
+        "splits": [],
     }
 
 
@@ -542,6 +560,25 @@ def migrate_state(raw) -> dict:
     if isinstance(display, dict) and _valid_display_active(state, display.get("active")):
         state["display"]["active"] = display["active"]
 
+    # Ebenfalls erst nach den Boards, aber vor den Bildschirmen (die pruefen
+    # "/split/<id>" gegen state["splits"]).
+    splits = raw.get("splits")
+    if isinstance(splits, list):
+        for stored in splits:
+            if not isinstance(stored, dict):
+                continue
+            name = clamp_name(stored.get("name"), "Geteilter Bildschirm", limit=60)
+            left = stored.get("left")
+            right = stored.get("right")
+            state["splits"].append(
+                {
+                    "id": stored.get("id") or new_id(),
+                    "name": name,
+                    "left": left if _valid_split_side(state, left) else "/",
+                    "right": right if _valid_split_side(state, right) else "/",
+                }
+            )
+
     screens = raw.get("screens")
     if isinstance(screens, list):
         for stored in screens:
@@ -630,6 +667,9 @@ class Store:
         for board in self.state["boards"]:
             icon = "\U0001F3C1" if board["kind"] == "race" else "\U0001F3C6"
             views.append({"path": f"/board/{board['id']}", "label": f"{icon} {board['name']}"})
+        # Dasselbe fuer geteilte Bildschirme.
+        for split in self.state["splits"]:
+            views.append({"path": f"/split/{split['id']}", "label": f"◧ {split['name']}"})
         body = {
             "state": self.state,
             "standings": compute_standings(self.state, now),
@@ -980,6 +1020,13 @@ def op_delete_board(state: dict, board_id) -> None:
     # faellt sie auf "alle" zurueck statt fuer immer ins Leere zu zeigen.
     if state["display"]["active"] == f"board:{board_id}":
         state["display"]["active"] = "all"
+    # ... und fuer geteilte Bildschirme: eine Haelfte, die dieses Leaderboard
+    # zeigte, faellt auf das Haupt-Leaderboard zurueck.
+    for split in state["splits"]:
+        if split["left"] == view:
+            split["left"] = "/"
+        if split["right"] == view:
+            split["right"] = "/"
 
 
 def op_set_board_team_names(state: dict, board_id, names: dict) -> None:
@@ -1154,6 +1201,71 @@ def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> Non
     entrant["teamId"] = team_id
 
 
+# -- Geteilte Bildschirme -----------------------------------------------------
+# Ein Bildschirm, der in der Mitte geteilt eine Ansicht links und eine
+# andere rechts zeigt - z.B. Leaderboard links, Info-Tafel rechts. Wie bei
+# den eigenen Leaderboards bekommt jeder Split eine Id und taucht als eigene
+# waehlbare Ansicht "/split/<id>" in der Bildschirm-Palette auf.
+def new_split(name) -> dict:
+    return {
+        "id": new_id(),
+        "name": clamp_name(name, "Geteilter Bildschirm", limit=60),
+        "left": "/",
+        "right": "/",
+    }
+
+
+def find_split(state: dict, split_id) -> dict | None:
+    for split in state["splits"]:
+        if split["id"] == split_id:
+            return split
+    return None
+
+
+def op_create_split(state: dict, name, left, right) -> dict:
+    if len(state["splits"]) >= MAX_SPLITS:
+        raise ValueError(f"Es sind schon {MAX_SPLITS} geteilte Bildschirme angelegt")
+    if not _valid_split_side(state, left) or not _valid_split_side(state, right):
+        raise ValueError("Ungueltige Ansicht fuer eine Haelfte")
+    split = new_split(name)
+    split["left"] = left
+    split["right"] = right
+    # Neuester zuerst - im Admin sofort sichtbar, wie bei den Leaderboards.
+    state["splits"].insert(0, split)
+    return split
+
+
+def op_rename_split(state: dict, split_id, name) -> None:
+    split = find_split(state, split_id)
+    if split is None:
+        raise KeyError("Geteilter Bildschirm unbekannt")
+    split["name"] = clamp_name(name, split["name"], limit=60)
+
+
+def op_set_split_sides(state: dict, split_id, left, right) -> None:
+    split = find_split(state, split_id)
+    if split is None:
+        raise KeyError("Geteilter Bildschirm unbekannt")
+    if not _valid_split_side(state, left) or not _valid_split_side(state, right):
+        raise ValueError("Ungueltige Ansicht fuer eine Haelfte")
+    split["left"] = left
+    split["right"] = right
+
+
+def op_delete_split(state: dict, split_id) -> None:
+    splits = state["splits"]
+    remaining = [s for s in splits if s["id"] != split_id]
+    if len(remaining) == len(splits):
+        raise KeyError("Geteilter Bildschirm unbekannt")
+    state["splits"] = remaining
+    # Bildschirme, die diesen Split zeigten, fallen auf das Haupt-Leaderboard
+    # zurueck - sonst zeigen sie fuer immer eine Ansicht, die es nicht mehr gibt.
+    view = f"/split/{split_id}"
+    for screen in state["screens"]:
+        if screen["view"] == view:
+            screen["view"] = "/"
+
+
 # -- Kurzbefehle --------------------------------------------------------------
 # Gespeicherte Bausteinfolgen (wie bei Scratch zusammengesteckt), jede ueber
 # eine eigene Adresse GET /run/<id> ausloesbar - als Lesezeichen, Kachel auf
@@ -1180,6 +1292,20 @@ def new_shortcut(name) -> dict:
 def find_shortcut(state: dict, shortcut_id) -> dict | None:
     for shortcut in state["shortcuts"]:
         if shortcut["id"] == shortcut_id:
+            return shortcut
+    return None
+
+
+def find_shortcut_by_id_or_name(state: dict, token) -> dict | None:
+    """/run/<...> soll sowohl per Id als auch per Namen erreichbar sein - so
+    liest sich die Adresse selbst erklaerend (/run/Party-Start statt
+    /run/3f9a2b1c). Ids sind eindeutig und haben Vorrang; bei mehreren
+    Kurzbefehlen mit demselben Namen zaehlt einfach der erste Treffer."""
+    found = find_shortcut(state, token)
+    if found is not None:
+        return found
+    for shortcut in state["shortcuts"]:
+        if shortcut["name"] == token:
             return shortcut
     return None
 
@@ -1219,6 +1345,9 @@ def clamp_step(raw) -> dict | None:
             "type": step_type,
             "name": clamp_name(raw.get("name"), "", limit=60),
             "autostart": bool(raw.get("autostart", False)),
+            # Statt des festen Namens beim Ausfuehren erst danach fragen -
+            # siehe shortcut_needs_name_prompt()/op_run_shortcut().
+            "promptName": bool(raw.get("promptName", False)),
         }
 
     if step_type == "board_start_level":
@@ -1230,6 +1359,7 @@ def clamp_step(raw) -> dict | None:
             "boardId": board_id,
             "name": clamp_name(raw.get("name"), "", limit=60),
             "autostart": bool(raw.get("autostart", False)),
+            "promptName": bool(raw.get("promptName", False)),
         }
 
     if step_type == "start_timer":
@@ -1346,11 +1476,27 @@ def run_shortcut_step(state: dict, step: dict, now: int) -> None:
         pass
 
 
-def op_run_shortcut(state: dict, shortcut_id, now: int) -> dict:
-    shortcut = find_shortcut(state, shortcut_id)
+def shortcut_needs_name_prompt(shortcut: dict) -> bool:
+    """Wahr, wenn mindestens ein Level-Baustein vor dem Start erst nach
+    einem Namen fragen soll - dann zeigt GET /run/<...> zuerst eine kleine
+    Eingabeseite, statt sofort auszufuehren."""
+    return any(
+        step.get("promptName") and step.get("type") in ("start_level", "board_start_level")
+        for step in shortcut["steps"]
+    )
+
+
+def op_run_shortcut(state: dict, shortcut_id_or_name, now: int, prompt_name=None) -> dict:
+    shortcut = find_shortcut_by_id_or_name(state, shortcut_id_or_name)
     if shortcut is None:
         raise KeyError("Kurzbefehl unbekannt")
     for step in shortcut["steps"]:
+        if (
+            prompt_name is not None
+            and step.get("promptName")
+            and step.get("type") in ("start_level", "board_start_level")
+        ):
+            step = {**step, "name": prompt_name}
         run_shortcut_step(state, step, now)
     return shortcut
 
@@ -1487,6 +1633,41 @@ class Handler(BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             self._send(status, fh.read(), content_type)
 
+    def _run_name_prompt_page(self, shortcut: dict, token: str) -> None:
+        """Kleine Zwischenseite fuer /run/<...>, wenn der Kurzbefehl vor dem
+        Levelstart erst nach einem Namen fragen soll (siehe
+        shortcut_needs_name_prompt). Das Formular schickt denselben Aufruf
+        noch einmal ab, jetzt mit dem eingegebenen Namen im Query-String -
+        dann laeuft der Kurzbefehl ganz normal weiter."""
+        title = html.escape(shortcut["name"])
+        action = "/run/" + quote(token, safe="")
+        body = f"""<!DOCTYPE html>
+<html lang="de" data-fx="plain">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Levelname – {title}</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/pages.css">
+</head>
+<body>
+<section class="panel join">
+<h1>Levelname</h1>
+<p class="subtle">Kurzbefehl „{title}“</p>
+<form method="get" action="{action}">
+<div class="field">
+<label for="name">Name des neuen Levels</label>
+<input type="text" id="name" name="name" maxlength="60" autofocus
+       placeholder="leer lassen fuer automatische Nummerierung">
+</div>
+<button class="primary big" style="width: 100%" type="submit">Level starten</button>
+</form>
+</section>
+</body>
+</html>"""
+        self._send(HTTPStatus.OK, body.encode("utf-8"), "text/html; charset=utf-8")
+
     def _same_origin(self) -> bool:
         """
         CSRF-Schutz: schickt der Browser einen Origin-Header, muss er zu diesem
@@ -1531,7 +1712,9 @@ class Handler(BaseHTTPRequestHandler):
         "/teams": "teams.html",
         "/system": "system.html",
         "/info": "info.html",
+        "/vibe": "vibe.html",
         "/kurzbefehle": "shortcuts.html",
+        "/fernbedienung": "fernbedienung.html",
     }
 
     def do_GET(self):
@@ -1541,6 +1724,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(self.PAGES[path])
         if path == "/admin":
             return self._static("admin.html")
+        if path.startswith("/mitmachen/"):
+            # Dieselbe Anmeldeseite wie /mitmachen, aber mit fest vorgegebenem
+            # Team - join.js liest das Team aus dem Pfad und blendet die
+            # Teamwahl aus. /mitmachen selbst bleibt unveraendert bestehen.
+            team_id = path[len("/mitmachen/"):]
+            return self._static("join.html") if team_id in TEAM_IDS \
+                else self._error(HTTPStatus.NOT_FOUND, "Unbekanntes Team")
         if path.startswith("/screen/"):
             # Der Name steckt im Pfad; die Seite meldet sich selbst per API an.
             return self._static("screen.html") if clamp_screen_id(path[len("/screen/"):]) \
@@ -1549,15 +1739,32 @@ class Handler(BaseHTTPRequestHandler):
             # Die Kennung steckt im Pfad; board.js sucht sie sich selbst aus
             # dem Live-Zustand - unbekannte IDs zeigen dort einen Hinweis.
             return self._static("board.html")
+        if path.startswith("/split/"):
+            # Dieselbe Idee wie bei /board/<id>: split.js sucht sich die
+            # Kennung selbst aus dem Live-Zustand.
+            return self._static("split.html")
         if path.startswith("/run/"):
             # Aufrufen fuehrt den Kurzbefehl aus und leitet dann weiter -
             # kein eigener Seiteninhalt, absichtlich per einfachem GET
             # ausloesbar (Lesezeichen, Handy-Homescreen, Stream Deck ...).
             # Ein unbekannter oder inzwischen geloeschter Kurzbefehl macht
             # einfach nichts, statt einen Fehler anzuzeigen.
-            shortcut_id = path[len("/run/"):]
+            #
+            # Ausnahme: enthaelt der Kurzbefehl einen Level-Baustein mit
+            # "erst nach dem Namen fragen" und wurde noch kein Name
+            # mitgegeben, zeigt diese Adresse zuerst eine kleine
+            # Eingabeseite statt sofort auszufuehren - siehe
+            # shortcut_needs_name_prompt().
+            shortcut_token = unquote(path[len("/run/"):])
+            query = parse_qs(urlparse(self.path).query)
+            prompt_name = query.get("name", [None])[0]
+            shortcut = find_shortcut_by_id_or_name(self.store.snapshot(), shortcut_token)
+            if shortcut is not None and prompt_name is None and shortcut_needs_name_prompt(shortcut):
+                return self._run_name_prompt_page(shortcut, shortcut_token)
             try:
-                self.store.mutate(lambda s: op_run_shortcut(s, shortcut_id, now_ms()))
+                self.store.mutate(
+                    lambda s: op_run_shortcut(s, shortcut_token, now_ms(), prompt_name)
+                )
             except KeyError:
                 pass
             return self._send(HTTPStatus.FOUND, b"", "text/plain; charset=utf-8", {"Location": "/admin"})
@@ -1829,6 +2036,25 @@ class Handler(BaseHTTPRequestHandler):
                 lambda s: op_board_start_active_timers(s, body.get("boardId"), now)
             ),
             "/api/boards/entrant": lambda body, now: self._board_entrant(body),
+            # -- Geteilte Bildschirme --------------------------------------------
+            "/api/splits/create": lambda body, now: {
+                "split": store.mutate(
+                    lambda s: op_create_split(
+                        s, body.get("name"), body.get("left"), body.get("right")
+                    )
+                )
+            },
+            "/api/splits/rename": lambda body, now: store.mutate(
+                lambda s: op_rename_split(s, body.get("splitId"), body.get("name"))
+            ),
+            "/api/splits/sides": lambda body, now: store.mutate(
+                lambda s: op_set_split_sides(
+                    s, body.get("splitId"), body.get("left"), body.get("right")
+                )
+            ),
+            "/api/splits/delete": lambda body, now: store.mutate(
+                lambda s: op_delete_split(s, body.get("splitId"))
+            ),
             # -- Kurzbefehle ---------------------------------------------------
             "/api/shortcuts/create": lambda body, now: {
                 "shortcut": store.mutate(

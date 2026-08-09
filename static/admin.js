@@ -20,6 +20,7 @@ import { renderRoster, wireRosterColumns } from '/static/roster.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
+let views = [];
 
 // -- Kleinkram ---------------------------------------------------------------
 function toast(message, kind = 'ok') {
@@ -821,7 +822,7 @@ for (const button of document.querySelectorAll('button[data-reset]')) {
 
 // -- Bildschirme -------------------------------------------------------------
 function renderScreenBlock(payload) {
-  const views = payload.views || [];
+  views = payload.views || [];
   const screens = payload.state?.screens || [];
 
   // renderViews() baut nur neu, wenn sich die Ansichtsliste wirklich
@@ -836,6 +837,99 @@ function renderScreenBlock(payload) {
     remove: (screenId) => send('/api/screens/delete', { screenId }),
   });
 }
+
+// -- Bildschirm teilen ---------------------------------------------------------
+// Auswahllisten fuer eine Haelfte duerfen keinen weiteren Split anbieten -
+// das lehnt der Server ohnehin ab (kein Split im Split), hier schon gar
+// nicht erst zur Wahl stellen.
+function populateSideSelect(select, wanted) {
+  const options = views.filter((v) => !v.path.startsWith('/split/'));
+  const target = wanted !== undefined ? wanted : select.value;
+  select.replaceChildren();
+  for (const view of options) {
+    const option = document.createElement('option');
+    option.value = view.path;
+    option.textContent = view.label;
+    select.append(option);
+  }
+  if (options.some((v) => v.path === target)) select.value = target;
+}
+
+function renderSplitCard(split) {
+  const item = document.createElement('div');
+  item.className = 'list-item';
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = split.name;
+  nameInput.maxLength = 60;
+  nameInput.dataset.key = `split-name-${split.id}`;
+  nameInput.addEventListener('change', () =>
+    send('/api/splits/rename', { splitId: split.id, name: nameInput.value }));
+  const del = document.createElement('button');
+  del.className = 'danger small';
+  del.type = 'button';
+  del.textContent = 'Löschen';
+  del.addEventListener('click', () => {
+    if (confirm(`Geteilten Bildschirm „${split.name}“ wirklich löschen?`)) {
+      send('/api/splits/delete', { splitId: split.id });
+    }
+  });
+  head.append(nameInput, del);
+
+  const sidesRow = document.createElement('div');
+  sidesRow.className = 'two-col';
+
+  const leftField = document.createElement('div');
+  leftField.className = 'field';
+  const leftLabel = document.createElement('label');
+  leftLabel.textContent = 'Links';
+  const leftSelect = document.createElement('select');
+  const rightField = document.createElement('div');
+  rightField.className = 'field';
+  const rightLabel = document.createElement('label');
+  rightLabel.textContent = 'Rechts';
+  const rightSelect = document.createElement('select');
+
+  populateSideSelect(leftSelect, split.left);
+  populateSideSelect(rightSelect, split.right);
+  const saveSides = () =>
+    send('/api/splits/sides', { splitId: split.id, left: leftSelect.value, right: rightSelect.value });
+  leftSelect.addEventListener('change', saveSides);
+  rightSelect.addEventListener('change', saveSides);
+
+  leftField.append(leftLabel, leftSelect);
+  rightField.append(rightLabel, rightSelect);
+  sidesRow.append(leftField, rightField);
+  item.append(head, sidesRow);
+  return item;
+}
+
+function renderSplitsBlock() {
+  const splits = state?.splits || [];
+  $('splits-empty').hidden = splits.length > 0;
+  $('split-count').textContent = splits.length ? `(${splits.length})` : '';
+  const container = $('splits');
+  container.replaceChildren();
+  for (const split of splits) {
+    container.append(renderSplitCard(split));
+  }
+
+  populateSideSelect($('split-left'));
+  populateSideSelect($('split-right'));
+}
+
+$('add-split').addEventListener('click', async () => {
+  const name = $('split-name').value.trim();
+  if (!name) return toast('Bitte einen Namen für den geteilten Bildschirm eingeben', 'error');
+  await send('/api/splits/create', {
+    name, left: $('split-left').value, right: $('split-right').value,
+  });
+  $('split-name').value = '';
+  toast('Geteilter Bildschirm erstellt');
+});
 
 // -- Effekte, Luefter, Info-Tafel --------------------------------------------
 function renderSettings() {
@@ -901,6 +995,7 @@ connectEvents({
       renderRosterBlock();
       renderBoards();
       renderScreenBlock(payload);
+      renderSplitsBlock();
       renderSettings();
       renderBoardFilterOptions();
       applyBoardFilter();

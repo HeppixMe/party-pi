@@ -6,15 +6,27 @@ import { api, connectEvents, fetchState, teamName } from '/static/common.js';
 
 const $ = (id) => document.getElementById(id);
 
+// /mitmachen/a bzw. /mitmachen/b: dieselbe Seite, aber mit fest
+// vorgegebenem Team - eigene Adresse je Team, z.B. auf zwei getrennten
+// QR-Codes fuer die beiden Tische. /mitmachen ohne Team bleibt unveraendert.
+const forcedTeamMatch = location.pathname.match(/^\/mitmachen\/(a|b)\/?$/);
+const forcedTeam = forcedTeamMatch ? forcedTeamMatch[1] : null;
+
 let state = null;
 let me = null;
-let chosen = null;      // vom Benutzer angetipptes Team
+let chosen = forcedTeam;      // vom Benutzer angetipptes Team
 let editing = false;    // true = Formular offen, obwohl schon angemeldet
 
 function render() {
+  $('team-choice').hidden = Boolean(forcedTeam);
+  if (forcedTeam) chosen = forcedTeam;
   for (const team of ['a', 'b']) {
     $(`team-${team}`).textContent = teamName(state, team);
     $(`team-${team}`).classList.toggle('chosen', chosen === team);
+  }
+  if (forcedTeam) {
+    $('forced-team-note').hidden = false;
+    $('forced-team-note').textContent = `Team: ${teamName(state, forcedTeam)}`;
   }
 
   const known = Boolean(me);

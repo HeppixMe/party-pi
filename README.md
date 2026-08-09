@@ -115,15 +115,19 @@ oben, der genau das per Doppelklick für Windows anbietet.
 | `/` | Leaderboard: SOS mit beiden Uhren, Smash-Rangliste |
 | `/qr` | großer QR-Code zum Mitmachen, plus Adresse zum Abtippen |
 | `/mitmachen` | Anmeldung für Gäste (Name + Team), fürs Handy |
+| `/mitmachen/a`, `/mitmachen/b` | dieselbe Anmeldung, aber fest auf ein Team eingestellt (keine Teamwahl) |
 | `/teams` | Kader: wer ist in welchem Team |
 | `/system` | Pi-Terminal: Temperatur, Lüfter, Laufzeit, Adresse, verbundene Geräte |
 | `/info` | Info-Tafel — WLAN, Ablauf, Regeln; Text im Admin bearbeitbar |
+| `/vibe` | Stimmungs-Anzeige für die Pause zwischen zwei Runden, reagiert optional auf Musik |
 | `/seiten` | Übersicht über alle Seiten |
 | `/screen/<name>` | gesteuerter Bildschirm (siehe unten) |
 | `/board/<id>` | ein selbst angelegtes Leaderboard (siehe „Eigene Leaderboards") |
+| `/split/<id>` | ein geteilter Bildschirm, zwei Ansichten nebeneinander (siehe „Bildschirme steuern") |
 | `/admin` | Steuerung — kein Passwort nötig |
 | `/kurzbefehle` | Kurzbefehle zusammenstecken (siehe unten) |
-| `/run/<id>` | führt einen Kurzbefehl aus und leitet auf `/admin` weiter |
+| `/fernbedienung` | gespeicherte Kurzbefehle als große Knöpfe antippen |
+| `/run/<id-oder-name>` | führt einen Kurzbefehl aus (per Id oder Name) und leitet auf `/admin` weiter |
 
 ---
 
@@ -159,6 +163,10 @@ Es gibt kein separates Admin-Passwort: `/admin` ist für alle im selben Netz off
 wie die Mitmach-Seite. Das ist bewusst so einfach gehalten — auf einem Party-Abend im
 eigenen, vertrauenswürdigen WLAN ist das kein Problem. Wer das nicht möchte, öffnet `/admin`
 einfach nicht auf einem Gerät, das Gäste in die Hand bekommen.
+
+Steht an jedem Tisch ein eigener QR-Code, helfen `/mitmachen/a` und `/mitmachen/b`: dieselbe
+Anmeldung, aber ohne Teamwahl — wer darüber eintritt, landet automatisch im jeweiligen
+Team. `/mitmachen` selbst bleibt unverändert mit freier Teamwahl bestehen.
 
 ### Smash
 
@@ -221,6 +229,19 @@ Der Wechsel ist bei allen drei Wegen sofort da. Solange nichts zugewiesen ist, z
 Bildschirm seinen eigenen Namen groß an — so weißt du, welche Kachel zu welchem Gerät
 gehört. Kacheln ohne Lebenszeichen werden nach zwei Minuten als „offline" markiert.
 
+**Bildschirm teilen**: unter *Bildschirm teilen* im Admin einen geteilten Bildschirm
+anlegen — Name, eine Ansicht links, eine Ansicht rechts (z. B. Leaderboard links, Info-Tafel
+rechts). Er erscheint danach wie ein normales eigenes Leaderboard in der Ansichten-Palette
+und lässt sich genauso einem Bildschirm zuweisen. Eine Hälfte darf alles zeigen, was auch
+ein normaler Bildschirm zeigen könnte, nur keinen weiteren geteilten Bildschirm. Wird ein
+Leaderboard gelöscht, das gerade eine Hälfte belegte, springt diese Hälfte automatisch auf
+das Haupt-Leaderboard zurück.
+
+**Vibe**: eine Stimmungs-/Deko-Ansicht für die Pause zwischen zwei Runden, unter `/vibe` und
+in der Ansichten-Palette wählbar. Reagiert mit Mikrofon-Erlaubnis auf die Musik im Raum,
+sonst läuft eine ruhige automatische Animation — läuft komplett lokal, nichts wird
+aufgenommen oder verschickt.
+
 ### Kurzbefehle
 
 Unter `/kurzbefehle` (auch von der Steuerseite aus verlinkt) lassen sich eigene
@@ -246,14 +267,29 @@ Uhren auf einen eigenen Start (Häkchen setzen oder den passenden „…Uhren st
 direkt danach einreihen, z. B. für ein „Party-Start“, das ein Level anlegt und die Uhren im
 selben Rutsch loslaufen lässt).
 
-Nach dem Speichern bekommt jeder Kurzbefehl eine eigene Adresse (`/run/<id>`, über
-„Kopieren“ neben dem Kurzbefehl greifbar). Sie beim **Aufrufen** aus — ohne dass die Seite
-selbst irgendetwas anzeigt — und leitet danach auf `/admin` weiter. Praktisch als
-Lesezeichen, als Kachel auf dem Handy-Homescreen oder als Knopf auf einem Stream Deck:
-„Party-Start“ könnte z. B. den Beamer auf den QR-Code legen, den Fernseher aufs
-Leaderboard und in einem Rutsch ein neues Turnier-Leaderboard anlegen. Ein Baustein, der
-auf einen inzwischen entfernten Bildschirm oder ein gelöschtes Leaderboard zeigt, wird beim
-Ausführen einfach übersprungen — die übrigen Bausteine laufen trotzdem.
+Bei „SOS-Level starten“ und „Level in eigenem Leaderboard starten“ gibt es zusätzlich das
+Häkchen **„beim Aufruf erst nach dem Levelnamen fragen“**: Statt des festen Namens im
+Baustein zeigt `/run/...` dann zuerst eine kleine Eingabeseite mit einem Textfeld, und erst
+nach dem Absenden läuft der Kurzbefehl mit dem eingegebenen Namen weiter (leer lassen zählt
+als automatische Nummerierung). Praktisch für einen Kurzbefehl, der bei jedem Level neu
+gebraucht wird, aber jedes Mal einen anderen Namen tragen soll.
+
+Nach dem Speichern bekommt jeder Kurzbefehl eine eigene Adresse — **nach seinem Namen**, nicht
+nach einer internen Kennung (`/run/Party-Start`, über „Kopieren“ neben dem Kurzbefehl
+greifbar; Leerzeichen und Sonderzeichen werden dabei automatisch kodiert). Tragen mehrere
+Kurzbefehle denselben Namen, zählt beim Aufrufen einfach der erste Treffer. Sie beim
+**Aufrufen** aus — ohne dass die Seite selbst irgendetwas anzeigt, außer bei einer
+Namensabfrage wie oben — und leitet danach auf `/admin` weiter. Praktisch als Lesezeichen,
+als Kachel auf dem Handy-Homescreen oder als Knopf auf einem Stream Deck: „Party-Start“
+könnte z. B. den Beamer auf den QR-Code legen, den Fernseher aufs Leaderboard und in einem
+Rutsch ein neues Turnier-Leaderboard anlegen. Ein Baustein, der auf einen inzwischen
+entfernten Bildschirm oder ein gelöschtes Leaderboard zeigt, wird beim Ausführen einfach
+übersprungen — die übrigen Bausteine laufen trotzdem.
+
+Unter `/fernbedienung` (auch von `/kurzbefehle` aus verlinkt) stehen alle gespeicherten
+Kurzbefehle als große, antippbare Knöpfe — praktisch fürs Handy in der Hosentasche, ohne
+erst ins Admin zu wechseln. Ein Kurzbefehl mit Namensabfrage öffnet dort automatisch die
+Eingabeseite, statt ihn im Hintergrund wirkungslos auszuführen.
 
 ### Effekte und Lüfter
 
@@ -338,7 +374,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 223 Tests, ~10 s
+python3 -m unittest discover -s tests      # 238 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

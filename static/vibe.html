@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vibe – LAN-Party Leaderboard</title>
+<link rel="icon" href="data:,">
+<style>
+/*
+ * Stimmungs-/Ambient-Anzeige, bewusst ohne Abhaengigkeit von theme.css oder
+ * common.js - dieselbe einzelne Datei wie in standalone/vibe/index.html,
+ * hier nur als normale Ansicht ins Setup eingehaengt (Route "/vibe",
+ * waehlbar bei den Bildschirmen). Reagiert per Mikrofon auf die Musik im
+ * Raum (Web Audio API); ohne Mikrofonzugriff laeuft stattdessen eine
+ * ruhige, zeitgesteuerte Animation - die Seite haengt also nie fest.
+ * Bewusst einfarbig Orange, wie die Leitfarbe des Cyberpunk-Themes -
+ * Cyan ist dort nur die Farbe von Team 2 und gehoert nicht auf eine Seite
+ * ohne Teams.
+ */
+:root {
+  --bg: #0a0705;
+  --team-a: #ff7a18;
+  --accent-2: #ffb020;
+  --muted: #a87b58;
+  --text: #ffe8d2;
+  --mono: "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", ui-monospace, "Courier New", monospace;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: var(--mono);
+}
+canvas { display: block; position: fixed; inset: 0; }
+
+.overlay {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.2rem; text-align: center; padding: 2rem;
+  background: radial-gradient(ellipse at center, rgba(26, 14, 6, 0.92), rgba(10, 7, 5, 0.98));
+  transition: opacity 0.6s ease;
+}
+.overlay.hidden { opacity: 0; pointer-events: none; }
+.overlay h1 {
+  margin: 0; font-size: clamp(2rem, 7vw, 4rem); letter-spacing: 0.15em;
+  color: var(--team-a);
+  text-shadow:
+    0 0 0.15em rgba(255, 200, 100, 0.95),
+    0 0 0.45em rgba(255, 122, 24, 0.85),
+    0 0 1.1em rgba(255, 122, 24, 0.55),
+    0 0 2.4em rgba(255, 122, 24, 0.3);
+}
+.overlay p { margin: 0; color: var(--muted); max-width: 34rem; line-height: 1.5; }
+.overlay .row { display: flex; gap: 0.8rem; flex-wrap: wrap; justify-content: center; }
+button {
+  font-family: inherit; font-size: 0.95rem; cursor: pointer;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--team-a); border-radius: 3px;
+  padding: 0.7rem 1.3rem; letter-spacing: 0.05em;
+  box-shadow: 0 0 14px rgba(255, 122, 24, 0.3);
+  transition: box-shadow 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+button:hover { background: var(--team-a); color: #180a00; box-shadow: 0 0 26px rgba(255, 122, 24, 0.7); }
+button.alt { border-color: var(--muted); color: var(--muted); box-shadow: none; }
+button.alt:hover { background: var(--muted); color: #180a00; box-shadow: 0 0 20px rgba(168, 123, 88, 0.5); }
+
+.hud {
+  position: fixed; left: 1rem; bottom: 1rem;
+  display: flex; align-items: center; gap: 0.6rem;
+  font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); opacity: 0; transition: opacity 0.4s ease;
+  pointer-events: none;
+}
+body.show-hud .hud { opacity: 1; }
+.hud .dot { width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--muted); }
+.hud .dot.live { background: var(--accent-2); box-shadow: 0 0 0.4em var(--accent-2), 0 0 1em rgba(255, 176, 32, 0.6); }
+
+.controls {
+  position: fixed; right: 1rem; bottom: 1rem;
+  display: flex; gap: 0.5rem;
+  opacity: 0; transition: opacity 0.4s ease;
+}
+body.show-hud .controls { opacity: 1; }
+.controls button { padding: 0.4rem 0.7rem; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div class="overlay" id="overlay">
+    <h1>VIBE</h1>
+    <p>
+      Stimmungs-Anzeige fuer die Pause zwischen zwei Runden - laeuft komplett
+      lokal, nichts wird aufgenommen oder verschickt. Mit Mikrofon reagieren
+      Farbe und Bewegung auf die Musik im Raum; ohne Mikrofon laeuft eine
+      ruhige automatische Animation.
+    </p>
+    <div class="row">
+      <button id="start-mic" type="button">Mit Mikrofon starten</button>
+      <button class="alt" id="start-plain" type="button">Ohne Mikrofon</button>
+    </div>
+  </div>
+
+  <div class="hud">
+    <span class="dot" id="hud-dot"></span>
+    <span id="hud-text">ambient</span>
+  </div>
+  <div class="controls">
+    <button id="toggle-fullscreen" type="button">Vollbild</button>
+    <button id="back-to-menu" type="button">Menue</button>
+  </div>
+
+<script>
+'use strict';
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+let width = 0, height = 0, dpr = Math.max(1, window.devicePixelRatio || 1);
+
+function resize() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// -- Nur Orange: jede Farbe ist derselbe Farbton, nur die Helligkeit
+// wandert mit Energie bzw. pro Partikel zwischen Glutorange und hellem
+// Bernstein. Ueber HSL statt direkt in RGB gemischt, weil sich damit die
+// Helligkeit sauber regeln laesst, ohne den Farbton zu verschieben.
+function hslToRgb(h, s, l) {
+  const hue = ((h % 360) + 360) % 360 / 360;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + hue * 12) % 12;
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
+const HUE_ORANGE = 24; // wie --team-a
+
+function mixColor(t, alpha = 1) {
+  const clamped = Math.max(0, Math.min(1, t));
+  const lightness = 0.28 + clamped * 0.37; // dunkles Glutorange -> helles Bernstein
+  const [r, g, b] = hslToRgb(HUE_ORANGE, 1, lightness);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// -- Audio-Analyse ----------------------------------------------------------
+let analyser = null;
+let freqData = null;
+let audioActive = false;
+
+async function startAudio() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.82;
+    source.connect(analyser);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    audioActive = true;
+    setHud(true);
+    return true;
+  } catch (err) {
+    // Kein Mikrofon, keine Erlaubnis, oder unsicherer Kontext (kein https) -
+    // die Seite faellt einfach auf die automatische Animation zurueck.
+    console.warn('Mikrofon nicht verfuegbar, automatische Animation laeuft weiter:', err.message);
+    audioActive = false;
+    setHud(false);
+    return false;
+  }
+}
+
+function setHud(live) {
+  document.getElementById('hud-dot').classList.toggle('live', live);
+  document.getElementById('hud-text').textContent = live ? 'live · mikrofon' : 'ambient · automatisch';
+}
+
+// Liefert 32 Energie-Werte 0..1 - echte Frequenzbaender bei Mikrofon, sonst
+// sanft schwingende Ersatzwerte, damit derselbe Zeichencode fuer beide
+// Modi funktioniert.
+let fallbackPhase = 0;
+function energyBands(count, t) {
+  if (audioActive && analyser) {
+    analyser.getByteFrequencyData(freqData);
+    const bands = new Array(count);
+    const step = Math.floor(freqData.length / count);
+    for (let i = 0; i < count; i++) {
+      let sum = 0;
+      for (let j = 0; j < step; j++) sum += freqData[i * step + j];
+      bands[i] = (sum / step) / 255;
+    }
+    return bands;
+  }
+  fallbackPhase += 0.015;
+  const bands = new Array(count);
+  for (let i = 0; i < count; i++) {
+    bands[i] = 0.28 + 0.22 * Math.sin(fallbackPhase * 1.3 + i * 0.4) + 0.08 * Math.sin(fallbackPhase * 3.1 + i);
+  }
+  return bands;
+}
+
+// -- Partikel -----------------------------------------------------------
+const PARTICLE_COUNT = 90;
+const particles = [];
+function initParticles() {
+  particles.length = 0;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push({
+      x: Math.random(), y: Math.random(),
+      vx: (Math.random() - 0.5) * 0.0006,
+      vy: (Math.random() - 0.5) * 0.0006,
+      band: i % 32,
+      hue: Math.random(),
+      r: 1 + Math.random() * 2,
+    });
+  }
+}
+initParticles();
+
+let t = 0;
+let paused = false;
+
+function draw() {
+  t += 1;
+  const bands = energyBands(32, t);
+  const bass = (bands[0] + bands[1] + bands[2]) / 3;
+
+  // Nachleuchtender Hintergrund statt komplettem Loeschen - erzeugt die
+  // sanften Schweife der Partikel.
+  ctx.fillStyle = `rgba(10, 7, 5, ${0.14 + bass * 0.06})`;
+  ctx.fillRect(0, 0, width, height);
+
+  // Raumfuellender Grundschein: ein riesiger, weicher Schein ueber den
+  // ganzen Bildschirm, der mit dem Bass pulsiert - soll wie warmes Licht
+  // wirken, das den ganzen Raum erreicht, nicht nur die Mitte des Screens.
+  const cx = width / 2, cy = height / 2;
+  const roomR = Math.max(width, height) * (0.62 + bass * 0.18);
+  const roomGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, roomR);
+  roomGrad.addColorStop(0, mixColor(0.6 + bass * 0.3, 0.16 + bass * 0.22));
+  roomGrad.addColorStop(0.55, mixColor(0.4, 0.08 + bass * 0.10));
+  roomGrad.addColorStop(1, mixColor(0.2, 0));
+  ctx.fillStyle = roomGrad;
+  ctx.fillRect(0, 0, width, height);
+
+  // Pulsierender Ring in der Mitte, Radius/Helligkeit an Bass gekoppelt,
+  // mit echtem Leucht-Blur (shadowBlur) statt nur einem Farbverlauf.
+  const baseR = Math.min(width, height) * (0.15 + bass * 0.11);
+  ctx.save();
+  ctx.shadowColor = mixColor(0.55 + bass * 0.3, 1);
+  ctx.shadowBlur = 70 + bass * 140;
+  const ringGrad = ctx.createRadialGradient(cx, cy, baseR * 0.2, cx, cy, baseR);
+  ringGrad.addColorStop(0, mixColor(0.5, 0.0));
+  ringGrad.addColorStop(0.7, mixColor(bass, 0.35 + bass * 0.45));
+  ringGrad.addColorStop(1, mixColor(bass, 0));
+  ctx.fillStyle = ringGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Partikel: Farbe nach Frequenzband, Groesse/Leuchtkraft nach Energie -
+  // jeder mit eigenem Schein statt einer harten Kante.
+  ctx.save();
+  for (const p of particles) {
+    if (!paused) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0 || p.x > 1) p.vx *= -1;
+      if (p.y < 0 || p.y > 1) p.vy *= -1;
+    }
+    const e = bands[p.band];
+    const px = p.x * width, py = p.y * height;
+    const r = p.r + e * 6;
+    ctx.shadowColor = mixColor(p.hue, 1);
+    ctx.shadowBlur = 10 + e * 26;
+    ctx.beginPath();
+    ctx.fillStyle = mixColor(p.hue, 0.45 + e * 0.55);
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Spektrum-Balken am unteren Rand - der klassische Visualizer-Blick,
+  // mit Schein nach oben, als wuerde dort Licht aus dem Boden kommen.
+  const barCount = bands.length;
+  const barW = width / barCount;
+  ctx.save();
+  ctx.shadowBlur = 22;
+  for (let i = 0; i < barCount; i++) {
+    const e = bands[i];
+    const h = 6 + e * height * 0.24;
+    const color = mixColor(i / barCount, 0.6 + e * 0.4);
+    ctx.shadowColor = color;
+    ctx.fillStyle = color;
+    ctx.fillRect(i * barW + 1, height - h, barW - 2, h);
+  }
+  ctx.restore();
+
+  requestAnimationFrame(draw);
+}
+
+// -- Bedienung ----------------------------------------------------------
+const overlay = document.getElementById('overlay');
+function begin() {
+  overlay.classList.add('hidden');
+  document.body.classList.add('show-hud');
+}
+
+document.getElementById('start-mic').addEventListener('click', async () => {
+  await startAudio();
+  begin();
+});
+document.getElementById('start-plain').addEventListener('click', () => {
+  setHud(false);
+  begin();
+});
+document.getElementById('back-to-menu').addEventListener('click', () => {
+  overlay.classList.remove('hidden');
+});
+document.getElementById('toggle-fullscreen').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+});
+
+// HUD/Steuerleiste beim Bewegen kurz einblenden, sonst ausblenden - stoert
+// sonst auf dem Deko-Bildschirm.
+let hudTimer = null;
+window.addEventListener('pointermove', () => {
+  document.body.classList.add('show-hud');
+  clearTimeout(hudTimer);
+  hudTimer = setTimeout(() => document.body.classList.remove('show-hud'), 2500);
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'f' || event.key === 'F') document.getElementById('toggle-fullscreen').click();
+  if (event.key === ' ') { paused = !paused; event.preventDefault(); }
+  if (event.key === 'Escape' && document.fullscreenElement) document.exitFullscreen();
+});
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
