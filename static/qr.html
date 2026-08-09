@@ -10,7 +10,7 @@
 </head>
 <body>
   <header class="page-head">
-    <h1>Mitmachen</h1>
+    <h1 id="heading">Mitmachen</h1>
     <span class="badge" id="conn">verbinde…</span>
   </header>
 
@@ -20,7 +20,7 @@
     </div>
 
     <div class="qr-steps">
-      <ol>
+      <ol id="steps">
         <li>Handy-Kamera auf den Code halten</li>
         <li>Namen eintragen</li>
         <li>Team wählen – fertig</li>
@@ -33,20 +33,49 @@
   </div>
 
   <script type="module">
-    import { connectEvents, fetchState } from '/static/common.js';
+    import { connectEvents, fetchState, teamName } from '/static/common.js';
 
     const conn = document.getElementById('conn');
 
+    // /qr/a bzw. /qr/b: derselbe QR-Code wie /qr, aber er fuehrt direkt auf
+    // die Team-Seite (/mitmachen/a bzw. /mitmachen/b) statt auf die
+    // allgemeine Anmeldung - Team ist dort schon fest eingestellt, der
+    // Schritt "Team waehlen" entfaellt deshalb.
+    const forcedTeamMatch = location.pathname.match(/^\/qr\/(a|b)\/?$/);
+    const forcedTeam = forcedTeamMatch ? forcedTeamMatch[1] : null;
+
+    if (forcedTeam) {
+      document.getElementById('qr').src = `/api/qr.svg?team=${forcedTeam}`;
+      document.getElementById('steps').innerHTML =
+        '<li>Handy-Kamera auf den Code halten</li><li>Namen eintragen – fertig</li>';
+    }
+
+    let state = null;
+    function updateHeading() {
+      if (!forcedTeam) return;
+      document.getElementById('heading').textContent = `Mitmachen – ${teamName(state, forcedTeam)}`;
+    }
+
     // Die Beitritts-Adresse haengt am Host dieser Anfrage und steht deshalb
-    // nur in /api/state - sie aendert sich waehrend des Abends nicht.
+    // nur in /api/state - sie aendert sich waehrend des Abends nicht. Bei
+    // einer Team-Seite haengt derselbe Pfadanhang wie bei /mitmachen/<team>
+    // dahinter, ohne die Host-Ermittlung selbst zu wiederholen.
     fetchState()
       .then((payload) => {
-        document.getElementById('url').textContent =
-          (payload.joinUrl || '').replace(/^https?:\/\//, '');
+        state = payload.state;
+        updateHeading();
+        const joinUrl = forcedTeam
+          ? (payload.joinUrl || '').replace(/\/mitmachen$/, `/mitmachen/${forcedTeam}`)
+          : payload.joinUrl;
+        document.getElementById('url').textContent = (joinUrl || '').replace(/^https?:\/\//, '');
       })
       .catch(() => { document.getElementById('url').textContent = 'siehe QR-Code'; });
 
     connectEvents({
+      onState: (payload) => {
+        state = payload.state;
+        updateHeading();
+      },
       onStatus: (online) => {
         conn.textContent = online ? 'live' : 'keine Verbindung';
         conn.classList.toggle('online', online);

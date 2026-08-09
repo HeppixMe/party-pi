@@ -108,6 +108,8 @@ def _valid_view(state: dict, view) -> bool:
         return True
     if isinstance(view, str) and view.startswith("/mitmachen/"):
         return view[len("/mitmachen/"):] in TEAM_IDS
+    if isinstance(view, str) and view.startswith("/qr/"):
+        return view[len("/qr/"):] in TEAM_IDS
     if isinstance(view, str) and view.startswith("/board/"):
         return find_board(state, view[len("/board/"):]) is not None
     return False
@@ -645,10 +647,12 @@ class Store:
     def _payload_locked(self) -> str:
         now = now_ms()
         views = [{"path": path, "label": label} for path, label in VIEWS]
-        # Team-spezifische Mitmachseiten (ohne Teamwahl) - Beschriftung folgt
-        # den aktuellen Teamnamen, genau wie bei den Team-Karten oben.
+        # Team-spezifische Mitmachseiten (ohne Teamwahl) und ihre QR-Codes -
+        # Beschriftung folgt den aktuellen Teamnamen, genau wie bei den
+        # Team-Karten oben.
         for team in self.state["sos"]["teams"]:
             views.append({"path": f"/mitmachen/{team['id']}", "label": f"Anmeldung {team['name']}"})
+            views.append({"path": f"/qr/{team['id']}", "label": f"Anmeldung {team['name']} (QR)"})
         # Eigene Leaderboards tauchen automatisch in der Bildschirm-Palette
         # auf - niemand soll eine Ansicht von Hand eintragen muessen.
         for board in self.state["boards"]:
@@ -1676,6 +1680,12 @@ class Handler(BaseHTTPRequestHandler):
             team_id = path[len("/mitmachen/"):]
             return self._static("join.html") if team_id in TEAM_IDS \
                 else self._error(HTTPStatus.NOT_FOUND, "Unbekanntes Team")
+        if path.startswith("/qr/"):
+            # Derselbe QR-Code wie /qr, aber der Code fuehrt direkt auf
+            # /mitmachen/<team> statt auf die allgemeine Anmeldung.
+            team_id = path[len("/qr/"):]
+            return self._static("qr.html") if team_id in TEAM_IDS \
+                else self._error(HTTPStatus.NOT_FOUND, "Unbekanntes Team")
         if path.startswith("/screen/"):
             # Der Name steckt im Pfad; die Seite meldet sich selbst per API an.
             return self._static("screen.html") if clamp_screen_id(path[len("/screen/"):]) \
@@ -1720,7 +1730,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/system":
             return self._json(self._system_status())
         if path == "/api/qr.svg":
-            body = qr.svg(self._join_url()).encode("utf-8")
+            team = parse_qs(urlparse(self.path).query).get("team", [None])[0]
+            body = qr.svg(self._join_url(team if team in TEAM_IDS else None)).encode("utf-8")
             return self._send(HTTPStatus.OK, body, "image/svg+xml; charset=utf-8")
         if path == "/api/events":
             return self._events()
@@ -1730,24 +1741,27 @@ class Handler(BaseHTTPRequestHandler):
         self._error(HTTPStatus.NOT_FOUND, "Unbekannter Pfad")
 
     # -- Adresse, die im QR-Code landet -------------------------------------
-    def _join_url(self) -> str:
+    def _join_url(self, team: str | None = None) -> str:
         """
-        Die Adresse, unter der Gaeste die Anmeldeseite erreichen.
+        Die Adresse, unter der Gaeste die Anmeldeseite erreichen - mit
+        `team` ("a"/"b") direkt die Team-Seite ohne Teamwahl (/mitmachen/a
+        bzw. /mitmachen/b), sonst die allgemeine Anmeldung.
 
         Reihenfolge: fest eingestellt -> der Host, ueber den diese Anfrage kam
         -> die LAN-Adresse des Pi. Der Umweg ueber den Host ist wichtig, weil
         der Kiosk-Browser auf dem Pi selbst ueber localhost kommt - dieser
         Adresse kann ein Handy nicht folgen.
         """
+        join_path = f"/mitmachen/{team}" if team in TEAM_IDS else "/mitmachen"
         if self.public_url:
-            return self.public_url.rstrip("/") + "/mitmachen"
+            return self.public_url.rstrip("/") + join_path
         host = (self.headers.get("Host") or "").strip()
         hostname = host.split(":")[0]
         if host and hostname not in ("localhost", "127.0.0.1", "::1", ""):
-            return f"http://{host}/mitmachen"
+            return f"http://{host}{join_path}"
         port = self.server.server_address[1]
         suffix = "" if port == 80 else f":{port}"
-        return f"http://{local_ip_address()}{suffix}/mitmachen"
+        return f"http://{local_ip_address()}{suffix}{join_path}"
 
     def _current_player(self) -> dict | None:
         """Der Spieler, dessen Cookie diese Anfrage mitbringt (falls vorhanden)."""

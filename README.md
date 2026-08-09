@@ -116,6 +116,7 @@ oben, der genau das per Doppelklick für Windows anbietet.
 | `/qr` | großer QR-Code zum Mitmachen, plus Adresse zum Abtippen |
 | `/mitmachen` | Anmeldung für Gäste (Name + Team), fürs Handy |
 | `/mitmachen/a`, `/mitmachen/b` | dieselbe Anmeldung, aber fest auf ein Team eingestellt (keine Teamwahl) |
+| `/qr/a`, `/qr/b` | derselbe QR-Code wie `/qr`, führt aber direkt auf `/mitmachen/a` bzw. `/mitmachen/b` |
 | `/teams` | Kader: wer ist in welchem Team |
 | `/system` | Pi-Terminal: Temperatur, Lüfter, Laufzeit, Adresse, verbundene Geräte |
 | `/info` | Info-Tafel — WLAN, Ablauf, Regeln; Text im Admin bearbeitbar |
@@ -165,9 +166,12 @@ einfach nicht auf einem Gerät, das Gäste in die Hand bekommen.
 
 Steht an jedem Tisch ein eigener QR-Code, helfen `/mitmachen/a` und `/mitmachen/b`: dieselbe
 Anmeldung, aber ohne Teamwahl — wer darüber eintritt, landet automatisch im jeweiligen
-Team. `/mitmachen` selbst bleibt unverändert mit freier Teamwahl bestehen. Beide Seiten
-stehen auch in der Ansichten-Palette bei *Bildschirme* zur Wahl („Anmeldung Team 1“ /
-„Anmeldung Team 2“, folgt umbenannten Teamnamen) — praktisch für ein Tablet direkt am
+Team. `/mitmachen` selbst bleibt unverändert mit freier Teamwahl bestehen. Für den QR-Code
+dazu gibt es `/qr/a` und `/qr/b` — genau wie `/qr`, nur dass der Code direkt auf die
+jeweilige Team-Seite führt statt auf die allgemeine Anmeldung; der Schritt „Team wählen“
+entfällt dort entsprechend. Alle vier Seiten stehen auch in der Ansichten-Palette bei
+*Bildschirme* zur Wahl („Anmeldung Team 1“ / „Anmeldung Team 1 (QR)“ usw., folgt
+umbenannten Teamnamen) — praktisch für ein Tablet oder einen kleinen Bildschirm direkt am
 Team-Tisch.
 
 ### Smash
@@ -378,7 +382,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 238 Tests, ~10 s
+python3 -m unittest discover -s tests      # 242 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

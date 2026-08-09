@@ -72,6 +72,7 @@ class PublicPagesTest(ServerTestCase):
     PUBLIC = [
         "/", "/seiten", "/qr", "/mitmachen", "/teams", "/system", "/info", "/vibe",
         "/admin", "/kurzbefehle", "/fernbedienung", "/mitmachen/a", "/mitmachen/b",
+        "/qr/a", "/qr/b",
     ]
 
     def test_every_public_page_is_reachable(self):
@@ -86,6 +87,11 @@ class PublicPagesTest(ServerTestCase):
         for path in ("/qr/", "/teams/", "/mitmachen/"):
             status, _body, _type = self.request("GET", path)
             self.assertEqual(status, 200, path)
+
+    def test_qr_and_mitmachen_reject_an_unknown_team(self):
+        for path in ("/mitmachen/c", "/qr/c"):
+            status, _body, _type = self.request("GET", path)
+            self.assertEqual(status, 404, path)
 
     def test_screen_page_needs_a_usable_name(self):
         self.assertEqual(self.request("GET", "/screen/tv")[0], 200)
@@ -148,6 +154,33 @@ class QrEndpointTest(ServerTestCase):
         _status, payload, _type = self.request("GET", "/api/state")
         self.assertNotIn("localhost", payload["joinUrl"])
         self.assertNotIn("127.0.0.1", payload["joinUrl"])
+
+    def test_team_qr_code_encodes_the_team_specific_address(self):
+        # /qr/a soll auf /mitmachen/a fuehren, nicht auf die allgemeine
+        # Anmeldung - derselbe Modulanzahl-Abgleich wie beim Grund-Code.
+        _status, payload, _type = self.request("GET", "/api/state")
+        team_url = payload["joinUrl"] + "/a"
+        self.assertTrue(team_url.endswith("/mitmachen/a"))
+
+        import qr
+
+        expected = qr.make_matrix(team_url)
+        _status, svg, _type = self.request("GET", "/api/qr.svg?team=a")
+        span = expected.size + 8
+        self.assertIn(f'viewBox="0 0 {span} {span}"'.encode(), svg)
+
+    def test_qr_svg_ignores_an_unknown_team_query(self):
+        # Ein unbekanntes Team im Query-String faellt auf die allgemeine
+        # Anmeldung zurueck statt einen Fehler zu werfen.
+        status, body, _type = self.request("GET", "/api/qr.svg?team=c")
+        self.assertEqual(status, 200)
+        self.assertTrue(body.startswith(b"<svg "))
+
+    def test_team_join_views_include_qr_variants(self):
+        _status, payload, _type = self.request("GET", "/api/state")
+        paths = [v["path"] for v in payload["views"]]
+        self.assertIn("/qr/a", paths)
+        self.assertIn("/qr/b", paths)
 
 
 class JoinTest(ServerTestCase):
