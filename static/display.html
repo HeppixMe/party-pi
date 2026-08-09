@@ -17,8 +17,8 @@
     </div>
   </header>
 
-  <main class="board">
-    <section class="panel panel-sos">
+  <main class="board" id="board-main">
+    <section class="panel panel-sos" id="sos-panel">
       <div class="panel-head">
         <h2>S.O.S.</h2>
         <p class="lead" id="sos-lead">Noch kein Level gestartet</p>
@@ -52,7 +52,7 @@
       </div>
     </section>
 
-    <section class="panel panel-smash">
+    <section class="panel panel-smash" id="smash-panel">
       <div class="panel-head">
         <h2>Smash Bros</h2>
         <p class="lead">Meiste Siege</p>
@@ -60,6 +60,56 @@
       <div class="panel-body">
         <ol class="ranking" id="smash-list"></ol>
         <p class="empty" id="smash-empty">Noch keine Spieler eingetragen…</p>
+      </div>
+    </section>
+
+    <!-- Nur sichtbar, wenn im Admin ein bestimmtes eigenes Leaderboard als
+         Anzeige ausgewaehlt wurde (state.display.active = "board:<id>").
+         Rendering teilt sich boardview.js mit /board/<id>, nur mit
+         "active-"-Praefix auf allen Ids, damit sie nicht mit den Ids oben
+         kollidieren. -->
+    <section class="panel panel-sos" id="active-race-panel" hidden>
+      <div class="panel-head">
+        <h2 id="active-race-heading">Rennen</h2>
+        <p class="lead" id="active-race-lead">Noch kein Level gestartet</p>
+      </div>
+
+      <div class="panel-body">
+      <table class="grid" id="active-race-table">
+        <thead>
+          <tr>
+            <th class="col-level">Level</th>
+            <th class="col-team" id="active-head-a">Team 1</th>
+            <th class="col-team" id="active-head-b">Team 2</th>
+          </tr>
+        </thead>
+        <tbody id="active-race-body"></tbody>
+        <tfoot>
+          <tr class="row-total">
+            <th>Gesamt</th>
+            <td id="active-total-a">00:00.0</td>
+            <td id="active-total-b">00:00.0</td>
+          </tr>
+          <tr class="row-wins">
+            <th>Level gewonnen</th>
+            <td id="active-wins-a">0</td>
+            <td id="active-wins-b">0</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      <p class="empty" id="active-race-empty">Wartet auf das erste Level…</p>
+      </div>
+    </section>
+
+    <section class="panel panel-smash" id="active-score-panel" hidden>
+      <div class="panel-head">
+        <h2 id="active-score-heading">Rangliste</h2>
+        <p class="lead">Meiste Siege</p>
+      </div>
+      <div class="panel-body">
+        <ol class="ranking" id="active-score-list"></ol>
+        <p class="empty" id="active-score-empty">Noch keine Teilnehmer eingetragen…</p>
       </div>
     </section>
   </main>

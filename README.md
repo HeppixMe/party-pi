@@ -132,11 +132,13 @@ oben, der genau das per Doppelklick für Windows anbietet.
 ### SOS
 
 1. Oben die **Teamnamen** eintragen (speichert beim Verlassen des Feldes).
-2. **„Neues Level starten"** — optional mit Namen. Beide Uhren laufen sofort los.
-3. Schafft ein Team das Level: **„Fertig"** bei diesem Team. Seine Uhr bleibt stehen,
+2. **„Neues Level starten"** — optional mit Namen. Alles Bisherige friert genau so ein,
+   wie es steht, die beiden neuen Uhren stehen aber erstmal auf 0 und laufen noch nicht.
+3. **„Beide Uhren starten"** löst beide gleichzeitig aus, sobald es wirklich losgeht — oder
+   die einzelnen **„Start"**-Knöpfe je Team, wenn ein Team später dran ist als das andere.
+4. Schafft ein Team das Level: **„Fertig"** bei diesem Team. Seine Uhr bleibt stehen,
    die des anderen läuft weiter.
-4. Nächstes Level: wieder **„Neues Level starten"**. Alles Bisherige friert genau so ein,
-   wie es steht.
+5. Nächstes Level: wieder **„Neues Level starten"**.
 
 Verklickt? Unter *Alle Level* lässt sich jede Zeit überschreiben (`mm:ss.z`, auch `1:23`
 oder `83` werden verstanden), jedes Level umbenennen, löschen und jede Uhr einzeln
@@ -164,6 +166,15 @@ Match eintragen: Sieger und Verlierer wählen, ein Klick setzt beides. Einzelne
 `+1`/`−1`-Knöpfe gibt es für Korrekturen. Über die zwei kleinen Team-Knöpfe lässt sich
 jeder Spieler einem Team zuordnen (nochmal antippen löst die Zuordnung wieder).
 
+### Kader
+
+Im Admin unter *Kader* stehen alle Spieler in drei Spalten — Team 1, Team 2, Ohne Team —
+und lassen sich zwischen ihnen **verschieben**: Karte auf eine andere Spalte ziehen (Maus
+oder Finger) oder antippen und danach die Zielspalte antippen. Praktisch, um Teams am
+Abend neu zu mischen, ohne für jeden Spieler einzeln durch die Smash-Liste zu suchen. Die
+Zuordnung ist dieselbe wie bei den Team-Knöpfen unter *Smash* — beide Wege ändern
+denselben Wert, betrifft also auch, wie Team-Leaderboards die Spieler zählen.
+
 ### Eigene Leaderboards
 
 Im Admin unter *Eigene Leaderboards* lässt sich für **jedes weitere Spiel** ein eigenes
@@ -188,11 +199,12 @@ ein Leaderboard wieder vollständig (Bildschirme, die es gerade zeigten, fallen 
 Haupt-Leaderboard zurück); **„Level leeren"** bzw. **„Punkte auf 0"** setzt nur den Inhalt
 dieses einen Leaderboards zurück, ohne die anderen zu berühren.
 
-Werden es viele Leaderboards, hilft **„Im Admin anzeigen"** oben auf der Steuerseite: damit
-lässt sich gezielt nur S.O.S., nur Smash Bros oder nur ein bestimmtes eigenes Leaderboard
-einblenden — die anderen bleiben aus dem Weg, ohne dass sich an den Bildschirmen etwas
-ändert. Rein eine Anzeige-Einstellung für dieses Gerät (gespeichert im Browser), nichts
-davon wird mit anderen Admin-Tabs geteilt.
+Werden es viele Leaderboards, hilft **„Anzeige"** oben auf der Steuerseite: damit lässt
+sich gezielt nur S.O.S., nur Smash Bros oder nur ein bestimmtes eigenes Leaderboard
+einblenden. Die Auswahl ist serverseitig gespeichert und gilt an zwei Stellen zugleich —
+im Admin blendet sie die anderen Leaderboards nur hier aus, auf der Haupt-Leaderboard-Seite
+(dem Fernseher unter `/`) bestimmt sie tatsächlich, was dort läuft. Wird das gerade
+angezeigte eigene Leaderboard gelöscht, springt die Auswahl automatisch auf „Alle" zurück.
 
 ### Bildschirme steuern
 
@@ -220,12 +232,19 @@ umsortierbar. Verfügbare Bausteine:
 |---|---|
 | Bildschirm zuweisen | weist einer Ansicht einen Bildschirm zu |
 | Leaderboard erstellen | legt ein neues eigenes Leaderboard an |
-| SOS-Level starten | startet ein Level im eingebauten SOS-Rennen |
-| Level in eigenem Leaderboard starten | startet ein Level in einem Renn-Leaderboard |
+| SOS-Level starten | legt ein Level im eingebauten SOS-Rennen an (Häkchen „Uhren sofort starten“ optional) |
+| SOS-Uhren starten | startet beide Uhren des zuletzt angelegten SOS-Levels |
+| Level in eigenem Leaderboard starten | legt ein Level in einem Renn-Leaderboard an (dieselbe Option) |
+| Uhren in eigenem Leaderboard starten | startet beide Uhren des zuletzt angelegten Levels dort |
 | Effekte umschalten | volles Programm oder schlicht |
 | Info-Tafel setzen | ersetzt den Text auf der Info-Tafel |
 | Zurücksetzen | SOS, Smash, Spieler oder alles |
 | Eigenes Leaderboard zurücksetzen | nur für ein bestimmtes Leaderboard |
+
+Level starten sich standardmäßig nicht mehr von selbst — genau wie im Admin warten die
+Uhren auf einen eigenen Start (Häkchen setzen oder den passenden „…Uhren starten“-Baustein
+direkt danach einreihen, z. B. für ein „Party-Start“, das ein Level anlegt und die Uhren im
+selben Rutsch loslaufen lässt).
 
 Nach dem Speichern bekommt jeder Kurzbefehl eine eigene Adresse (`/run/<id>`, über
 „Kopieren“ neben dem Kurzbefehl greifbar). Sie beim **Aufrufen** aus — ohne dass die Seite
@@ -319,7 +338,7 @@ sudo python3 fan/fan_control.py --config /etc/lanparty-fan.conf --once --dry-run
 ## Prüfen und Fehler suchen
 
 ```bash
-python3 -m unittest discover -s tests      # 215 Tests, ~10 s
+python3 -m unittest discover -s tests      # 223 Tests, ~10 s
 sudo ./scripts/setup.sh --status
 journalctl -u lanparty-leaderboard -f
 ```

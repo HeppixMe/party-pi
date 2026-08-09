@@ -107,6 +107,19 @@ class LevelFlowTest(unittest.TestCase):
         timers = state["sos"]["levels"][0]["timers"]
         self.assertEqual(lb.timer_value_ms(timers["a"], 60_000), 0)
 
+    def test_start_active_timers_starts_both_teams_at_once(self):
+        state = lb.default_state()
+        lb.op_start_level(state, "Level 1", autostart=False, now=0)
+        lb.op_start_active_timers(state, now=1000)
+        timers = state["sos"]["levels"][0]["timers"]
+        self.assertEqual(lb.timer_value_ms(timers["a"], 4000), 3000)
+        self.assertEqual(lb.timer_value_ms(timers["b"], 4000), 3000)
+
+    def test_start_active_timers_without_a_level_raises(self):
+        state = lb.default_state()
+        with self.assertRaises(KeyError):
+            lb.op_start_active_timers(state, now=0)
+
     def test_default_level_name_counts_up(self):
         state = lb.default_state()
         lb.op_start_level(state, None, autostart=True, now=0)
@@ -527,6 +540,13 @@ class BoardsTest(unittest.TestCase):
         lb.op_delete_board(state, board["id"])
         self.assertEqual(state["screens"][0]["view"], "/")
 
+    def test_deleting_the_displayed_board_falls_back_to_all(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        lb.op_set_display_active(state, f"board:{board['id']}")
+        lb.op_delete_board(state, board["id"])
+        self.assertEqual(state["display"]["active"], "all")
+
     def test_board_view_is_assignable_and_disappears_after_deletion(self):
         state = lb.default_state()
         board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
@@ -555,6 +575,27 @@ class BoardsTest(unittest.TestCase):
 
         lb.op_board_delete_level(state, board["id"], level["id"])
         self.assertEqual(state["boards"][0]["levels"], [])
+
+    def test_board_start_active_timers_starts_both_teams(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        lb.op_board_start_level(state, board["id"], "Strecke 1", False, now=0)
+        lb.op_board_start_active_timers(state, board["id"], now=1000)
+        timers = state["boards"][0]["levels"][0]["timers"]
+        self.assertEqual(lb.timer_value_ms(timers["a"], 4000), 3000)
+        self.assertEqual(lb.timer_value_ms(timers["b"], 4000), 3000)
+
+    def test_board_start_active_timers_without_a_level_raises(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        with self.assertRaises(KeyError):
+            lb.op_board_start_active_timers(state, board["id"], now=0)
+
+    def test_board_start_active_timers_rejects_score_boards(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Schach", "score", "solo", now=0)
+        with self.assertRaises(KeyError):
+            lb.op_board_start_active_timers(state, board["id"], now=0)
 
     def test_score_board_runs_entrants_like_smash(self):
         state = lb.default_state()
@@ -720,6 +761,26 @@ class ShortcutsTest(unittest.TestCase):
         lb.op_run_shortcut(state, shortcut["id"], now=5000)
         self.assertEqual(len(state["boards"][0]["levels"]), 1)
         self.assertEqual(state["boards"][0]["levels"][0]["name"], "Strecke 1")
+
+    def test_start_timer_step_starts_the_active_sos_level(self):
+        state = lb.default_state()
+        lb.op_start_level(state, "Level 1", autostart=False, now=0)
+        shortcut = lb.op_create_shortcut(state, "Uhren los", [{"type": "start_timer"}], now=0)
+        lb.op_run_shortcut(state, shortcut["id"], now=1000)
+        timers = state["sos"]["levels"][0]["timers"]
+        self.assertEqual(lb.timer_value_ms(timers["a"], 4000), 3000)
+        self.assertEqual(lb.timer_value_ms(timers["b"], 4000), 3000)
+
+    def test_board_start_timer_step_starts_the_active_board_level(self):
+        state = lb.default_state()
+        board = lb.op_create_board(state, "Rennen", "race", "teams", now=0)
+        lb.op_board_start_level(state, board["id"], "Strecke 1", False, now=0)
+        shortcut = lb.op_create_shortcut(
+            state, "Board-Uhren los", [{"type": "board_start_timer", "boardId": board["id"]}], now=0
+        )
+        lb.op_run_shortcut(state, shortcut["id"], now=1000)
+        timers = state["boards"][0]["levels"][0]["timers"]
+        self.assertEqual(lb.timer_value_ms(timers["a"], 4000), 3000)
 
     def test_board_reset_step(self):
         state = lb.default_state()

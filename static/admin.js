@@ -16,6 +16,7 @@ import {
   withFocusPreserved,
 } from '/static/common.js';
 import { renderScreens, renderViews } from '/static/screens.js';
+import { renderRoster, wireRosterColumns } from '/static/roster.js';
 
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -96,6 +97,7 @@ function renderCurrent() {
   const level = activeLevel();
   $('current-name').textContent = level ? level.name : '– kein Level gestartet –';
   $('level-name').placeholder = `Level ${(state?.sos?.levels?.length || 0) + 1}`;
+  $('start-both').disabled = !level;
 
   for (const team of TEAM_IDS) {
     const timer = level?.timers?.[team];
@@ -302,6 +304,20 @@ function renderPlayers() {
   }
 }
 
+// -- Kader: Spieler per Ziehen zwischen den Teams verschieben -----------------
+const rosterCols = { a: $('roster-a'), b: $('roster-b'), '': $('roster-none') };
+wireRosterColumns(rosterCols);
+
+function renderRosterBlock() {
+  const players = sortPlayers(state?.players || []);
+  $('roster-empty').hidden = players.length > 0;
+  $('roster-label-a').textContent = teamNameOf(state, 'a');
+  $('roster-label-b').textContent = teamNameOf(state, 'b');
+  renderRoster(rosterCols, players, {
+    assign: (id, teamId) => send('/api/smash/player', { action: 'team', id, teamId }),
+  });
+}
+
 // -- Eigene Leaderboards ------------------------------------------------------
 // Zusaetzliche, frei anlegbare Leaderboards fuer weitere Spiele - dieselben
 // Bausteine wie oben bei S.O.S. und Smash, nur parametrisiert auf ein
@@ -427,11 +443,22 @@ function renderBoardRaceControls(board) {
   startBtn.textContent = 'Neues Level starten';
   startBtn.addEventListener('click', async () => {
     const name = nameInput.value.trim();
-    await send('/api/boards/level', { boardId: board.id, name: name || null, autostart: true });
+    await send('/api/boards/level', { boardId: board.id, name: name || null, autostart: false });
     nameInput.value = '';
   });
   startRow.append(nameInput, startBtn);
   wrap.append(startRow);
+
+  const bothRow = document.createElement('div');
+  bothRow.className = 'row';
+  const bothBtn = document.createElement('button');
+  bothBtn.className = 'primary small';
+  bothBtn.type = 'button';
+  bothBtn.textContent = 'Beide Uhren starten';
+  bothBtn.disabled = !board.levels?.some((l) => l.active);
+  bothBtn.addEventListener('click', () => send('/api/boards/timer/start-all', { boardId: board.id }));
+  bothRow.append(bothBtn);
+  wrap.append(bothRow);
 
   const levels = document.createElement('div');
   levels.className = 'list';
@@ -654,15 +681,13 @@ $('board-name').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') $('add-board').click();
 });
 
-// -- Welches Leaderboard im Admin sichtbar ist --------------------------------
-// Reine Anzeige-Einstellung fuer dieses Geraet (localStorage) - blendet S.O.S.,
-// Smash Bros bzw. einzelne eigene Leaderboards hier aus, wenn es zu viele
-// werden. Wirkt sich nicht auf Bildschirme oder andere Admin-Tabs aus.
-const BOARD_FILTER_KEY = 'lanparty-admin-board-filter';
-
+// -- Welches Leaderboard angezeigt wird ---------------------------------------
+// state.display.active - serverseitig gespeichert, deshalb blendet dieselbe
+// Auswahl nicht nur hier die anderen Leaderboards aus, sondern bestimmt auch,
+// was die Haupt-Leaderboard-Seite (/) auf dem Fernseher zeigt.
 function renderBoardFilterOptions() {
   const select = $('board-filter');
-  const wanted = localStorage.getItem(BOARD_FILTER_KEY) || 'all';
+  const wanted = state?.display?.active || 'all';
 
   // Feste Optionen bleiben stehen, eigene Leaderboards werden neu aufgebaut -
   // sonst geht bei jedem Zustandsschub die gerade offene Auswahlliste zu.
@@ -676,23 +701,22 @@ function renderBoardFilterOptions() {
     select.append(option);
   }
 
-  // Zeigte die Auswahl ein inzwischen geloeschtes Leaderboard, zurueck auf
-  // "Alle" - sonst waere die Seite scheinbar leer, ohne dass klar ist, warum.
+  // Zeigte die Auswahl ein inzwischen geloeschtes Leaderboard, faellt der
+  // Server bereits auf "all" zurueck (siehe op_delete_board) - hier nur die
+  // Auswahlliste selbst nachziehen.
   const stillValid = [...select.options].some((o) => o.value === wanted);
   select.value = stillValid ? wanted : 'all';
-  if (!stillValid) localStorage.setItem(BOARD_FILTER_KEY, 'all');
 }
 
 function applyBoardFilter() {
-  const value = $('board-filter').value;
+  const value = state?.display?.active || 'all';
   for (const el of document.querySelectorAll('[data-leaderboard]')) {
     el.hidden = value !== 'all' && el.dataset.leaderboard !== value;
   }
 }
 
 $('board-filter').addEventListener('change', () => {
-  localStorage.setItem(BOARD_FILTER_KEY, $('board-filter').value);
-  applyBoardFilter();
+  send('/api/display/active', { active: $('board-filter').value });
 });
 // Ein Zeitrennen braucht zwei vergleichbare Bahnen - der Modus ist bei
 // "Rennen" deshalb immer "Teams", die Auswahl wird gesperrt statt eine
@@ -740,10 +764,12 @@ for (const team of TEAM_IDS) {
 
 $('start-level').addEventListener('click', async () => {
   const name = $('level-name').value.trim();
-  await send('/api/sos/level', { name: name || null, autostart: true });
+  await send('/api/sos/level', { name: name || null, autostart: false });
   $('level-name').value = '';
-  toast('Neues Level läuft');
+  toast('Neues Level angelegt – Uhren warten auf „Start“');
 });
+
+$('start-both').addEventListener('click', () => send('/api/sos/timer/start-all', {}));
 
 for (const button of document.querySelectorAll('#current button[data-team]')) {
   button.addEventListener('click', () => {
@@ -872,6 +898,7 @@ connectEvents({
       renderCurrent();
       renderLevels();
       renderPlayers();
+      renderRosterBlock();
       renderBoards();
       renderScreenBlock(payload);
       renderSettings();

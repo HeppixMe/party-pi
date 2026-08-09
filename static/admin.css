@@ -240,6 +240,58 @@ button.small { min-height: 36px; padding: 0.25rem 0.6rem; font-size: 0.8rem; }
   letter-spacing: 0.06em;
 }
 
+/* --- Kaderuebersicht: Spieler zwischen Teams ziehen ---------------------- */
+.roster {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+@media (max-width: 640px) {
+  .roster { grid-template-columns: 1fr; }
+}
+
+.roster-col {
+  border: 1px solid var(--line);
+  background: var(--bg-row);
+  padding: 0.6rem;
+  min-height: 4rem;
+}
+.roster-col h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.roster-col.drop-target {
+  border-color: var(--accent);
+  background: rgba(255, 122, 24, 0.14);
+}
+
+.roster-players {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 2rem;
+}
+
+.roster-card {
+  border: 1px solid var(--line-hot);
+  background: rgba(255, 122, 24, 0.08);
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.85rem;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;          /* sonst scrollt das Handy statt zu ziehen */
+}
+.roster-card.picked {
+  background: var(--accent);
+  color: #180a00;
+  font-weight: 700;
+}
+.roster-empty { margin: 0; font-size: 0.78rem; }
+
 /* --- Schalter ----------------------------------------------------------- */
 .switch-row {
   display: flex;

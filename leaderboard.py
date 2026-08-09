@@ -107,6 +107,16 @@ def _valid_view(state: dict, view) -> bool:
     return False
 
 
+def _valid_display_active(state: dict, active) -> bool:
+    """Gueltig ist 'all', 'sos', 'smash' oder 'board:<id>' eines bestehenden
+    eigenen Leaderboards."""
+    if active in ("all", "sos", "smash"):
+        return True
+    if isinstance(active, str) and active.startswith("board:"):
+        return find_board(state, active[len("board:"):]) is not None
+    return False
+
+
 TEAM_IDS = ("a", "b")
 
 
@@ -201,7 +211,11 @@ def default_state() -> dict:
         # Eine Personenliste fuer beides: Kader-Zugehoerigkeit und Smash-Wertung.
         "players": [],
         "info": {"text": DEFAULT_INFO_TEXT},
-        "display": {"fx": "full"},
+        # display.active bestimmt, welches Leaderboard das Haupt-Leaderboard
+        # (/) und das Admin-Panel anzeigen: "all" (S.O.S. + Smash, wie
+        # bisher), "sos"/"smash" (nur eines der beiden eingebauten) oder
+        # "board:<id>" fuer ein eigenes Leaderboard.
+        "display": {"fx": "full", "active": "all"},
         "screens": [],
         "fan": {"force": False},
         # Zusaetzliche, frei anlegbare Leaderboards fuer weitere Spiele -
@@ -523,6 +537,11 @@ def migrate_state(raw) -> dict:
 
             state["boards"].append(board)
 
+    # Erst nach den Boards pruefbar, da "board:<id>" ein bestehendes eigenes
+    # Leaderboard voraussetzt.
+    if isinstance(display, dict) and _valid_display_active(state, display.get("active")):
+        state["display"]["active"] = display["active"]
+
     screens = raw.get("screens")
     if isinstance(screens, list):
         for stored in screens:
@@ -720,6 +739,20 @@ def op_timer(state: dict, level_id, team_id: str, action: str, now: int) -> None
         raise ValueError(f"Unbekannte Aktion '{action}'")
 
 
+def op_start_active_timers(state: dict, now: int) -> None:
+    """Startet beide Uhren des zuletzt gestarteten Levels auf einmal - der
+    Startknopf fuer den Fall, dass ein Level ohne Autostart angelegt wurde
+    und beide Teams gleichzeitig losgehen sollen."""
+    level = next((l for l in state["sos"]["levels"] if l["active"]), None)
+    if level is None:
+        raise KeyError("Kein Level gestartet")
+    for team_id in TEAM_IDS:
+        timer = level["timers"][team_id]
+        if timer["runningSince"] is None:
+            timer["runningSince"] = now
+        timer["finished"] = False
+
+
 def op_adjust_timer(state: dict, level_id, team_id: str, value_ms: int, now: int) -> None:
     """Zeit von Hand korrigieren - eine laufende Uhr laeuft ab dem neuen Wert weiter."""
     level = find_level(state, level_id)
@@ -852,6 +885,12 @@ def op_set_fx(state: dict, fx) -> None:
     state["display"]["fx"] = fx
 
 
+def op_set_display_active(state: dict, active) -> None:
+    if not _valid_display_active(state, active):
+        raise ValueError("active muss 'all', 'sos', 'smash' oder 'board:<id>' sein")
+    state["display"]["active"] = active
+
+
 def op_set_fan_force(state: dict, force) -> bool:
     state["fan"]["force"] = bool(force)
     return state["fan"]["force"]
@@ -937,6 +976,10 @@ def op_delete_board(state: dict, board_id) -> None:
     for screen in state["screens"]:
         if screen["view"] == view:
             screen["view"] = "/"
+    # Dasselbe fuer die Anzeige-Auswahl: zeigte sie genau dieses Leaderboard,
+    # faellt sie auf "alle" zurueck statt fuer immer ins Leere zu zeigen.
+    if state["display"]["active"] == f"board:{board_id}":
+        state["display"]["active"] = "all"
 
 
 def op_set_board_team_names(state: dict, board_id, names: dict) -> None:
@@ -1019,6 +1062,21 @@ def op_board_timer(state: dict, board_id, level_id, team_id: str, action: str, n
         level["timers"][team_id] = new_timer()
     else:
         raise ValueError(f"Unbekannte Aktion '{action}'")
+
+
+def op_board_start_active_timers(state: dict, board_id, now: int) -> None:
+    """Dasselbe wie op_start_active_timers, nur fuer ein eigenes Leaderboard."""
+    board = find_board(state, board_id)
+    if board is None or board.get("kind") != "race":
+        raise KeyError("Renn-Leaderboard unbekannt")
+    level = next((l for l in board["levels"] if l["active"]), None)
+    if level is None:
+        raise KeyError("Kein Level gestartet")
+    for team_id in TEAM_IDS:
+        timer = level["timers"][team_id]
+        if timer["runningSince"] is None:
+            timer["runningSince"] = now
+        timer["finished"] = False
 
 
 def op_board_adjust_timer(
@@ -1105,6 +1163,7 @@ def op_board_set_entrant_team(state: dict, board_id, entrant_id, team_id) -> Non
 # Laden oder Speichern einfach verworfen wird statt den Server zu verwirren.
 SHORTCUT_STEP_TYPES = (
     "assign_screen", "create_board", "start_level", "board_start_level",
+    "start_timer", "board_start_timer",
     "set_fx", "set_info", "reset", "board_reset",
 )
 
@@ -1159,7 +1218,7 @@ def clamp_step(raw) -> dict | None:
         return {
             "type": step_type,
             "name": clamp_name(raw.get("name"), "", limit=60),
-            "autostart": bool(raw.get("autostart", True)),
+            "autostart": bool(raw.get("autostart", False)),
         }
 
     if step_type == "board_start_level":
@@ -1170,8 +1229,17 @@ def clamp_step(raw) -> dict | None:
             "type": step_type,
             "boardId": board_id,
             "name": clamp_name(raw.get("name"), "", limit=60),
-            "autostart": bool(raw.get("autostart", True)),
+            "autostart": bool(raw.get("autostart", False)),
         }
+
+    if step_type == "start_timer":
+        return {"type": step_type}
+
+    if step_type == "board_start_timer":
+        board_id = raw.get("boardId")
+        if not isinstance(board_id, str) or not board_id:
+            return None
+        return {"type": step_type, "boardId": board_id}
 
     if step_type == "set_fx":
         fx = raw.get("fx")
@@ -1257,11 +1325,15 @@ def run_shortcut_step(state: dict, step: dict, now: int) -> None:
         elif step_type == "create_board":
             op_create_board(state, step.get("name"), step["kind"], step["mode"], now)
         elif step_type == "start_level":
-            op_start_level(state, step.get("name") or None, step.get("autostart", True), now)
+            op_start_level(state, step.get("name") or None, step.get("autostart", False), now)
         elif step_type == "board_start_level":
             op_board_start_level(
-                state, step["boardId"], step.get("name") or None, step.get("autostart", True), now
+                state, step["boardId"], step.get("name") or None, step.get("autostart", False), now
             )
+        elif step_type == "start_timer":
+            op_start_active_timers(state, now)
+        elif step_type == "board_start_timer":
+            op_board_start_active_timers(state, step["boardId"], now)
         elif step_type == "set_fx":
             op_set_fx(state, step["fx"])
         elif step_type == "set_info":
@@ -1652,7 +1724,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/sos/level": lambda body, now: {
                 "level": store.mutate(
                     lambda s: op_start_level(
-                        s, body.get("name"), body.get("autostart", True), now
+                        s, body.get("name"), body.get("autostart", False), now
                     )
                 )
             },
@@ -1676,6 +1748,9 @@ class Handler(BaseHTTPRequestHandler):
                     s, body.get("levelId"), body.get("team"), body.get("valueMs"), now
                 )
             ),
+            "/api/sos/timer/start-all": lambda body, now: store.mutate(
+                lambda s: op_start_active_timers(s, now)
+            ),
             "/api/smash/player": lambda body, now: self._smash_player(body),
             "/api/smash/result": lambda body, now: store.mutate(
                 lambda s: op_match(s, body.get("winnerId"), body.get("loserId"))
@@ -1697,6 +1772,9 @@ class Handler(BaseHTTPRequestHandler):
             ),
             "/api/display": lambda body, now: store.mutate(
                 lambda s: op_set_fx(s, body.get("fx"))
+            ),
+            "/api/display/active": lambda body, now: store.mutate(
+                lambda s: op_set_display_active(s, body.get("active"))
             ),
             "/api/info": lambda body, now: store.mutate(
                 lambda s: op_set_info(s, body.get("text"))
@@ -1725,7 +1803,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/boards/level": lambda body, now: {
                 "level": store.mutate(
                     lambda s: op_board_start_level(
-                        s, body.get("boardId"), body.get("name"), body.get("autostart", True), now
+                        s, body.get("boardId"), body.get("name"), body.get("autostart", False), now
                     )
                 )
             },
@@ -1746,6 +1824,9 @@ class Handler(BaseHTTPRequestHandler):
                     s, body.get("boardId"), body.get("levelId"), body.get("team"),
                     body.get("valueMs"), now,
                 )
+            ),
+            "/api/boards/timer/start-all": lambda body, now: store.mutate(
+                lambda s: op_board_start_active_timers(s, body.get("boardId"), now)
             ),
             "/api/boards/entrant": lambda body, now: self._board_entrant(body),
             # -- Kurzbefehle ---------------------------------------------------

@@ -151,22 +151,34 @@ const BLOCK_DEFS = {
   },
   start_level: {
     label: 'SOS-Level starten',
-    hint: 'startet ein neues Level im eingebauten SOS-Rennen',
-    make: () => ({ type: 'start_level', name: '', autostart: true }),
+    hint: 'legt ein neues Level im eingebauten SOS-Rennen an',
+    make: () => ({ type: 'start_level', name: '', autostart: false }),
     fields(step, index) {
       const wrap = document.createElement('div');
       wrap.className = 'block-fields';
       wrap.append(
         textField(step.name, 'Levelname (optional)', `shortcut-level-name-${index}`, (v) => { step.name = v; }),
-        checkboxField(step.autostart, 'sofort starten', (v) => { step.autostart = v; }),
+        checkboxField(step.autostart, 'Uhren sofort starten', (v) => { step.autostart = v; }),
+        hintSpan('sonst warten die Uhren auf den Baustein „SOS-Uhren starten“ oder den Start-Knopf im Admin'),
       );
+      return wrap;
+    },
+  },
+  start_timer: {
+    label: 'SOS-Uhren starten',
+    hint: 'startet beide Uhren des zuletzt angelegten SOS-Levels',
+    make: () => ({ type: 'start_timer' }),
+    fields() {
+      const wrap = document.createElement('div');
+      wrap.className = 'block-fields';
+      wrap.append(hintSpan('wirkt auf das gerade aktive Level - meist direkt nach „SOS-Level starten“ eingesetzt'));
       return wrap;
     },
   },
   board_start_level: {
     label: 'Level in eigenem Leaderboard starten',
-    hint: 'startet ein Level in einem selbst angelegten Renn-Leaderboard',
-    make: () => ({ type: 'board_start_level', boardId: '', name: '', autostart: true }),
+    hint: 'legt ein Level in einem selbst angelegten Renn-Leaderboard an',
+    make: () => ({ type: 'board_start_level', boardId: '', name: '', autostart: false }),
     fields(step, index) {
       const wrap = document.createElement('div');
       wrap.className = 'block-fields';
@@ -179,8 +191,26 @@ const BLOCK_DEFS = {
       wrap.append(
         selectField(raceBoards.map((b) => [b.id, b.name]), step.boardId, (v) => { step.boardId = v; }),
         textField(step.name, 'Levelname (optional)', `shortcut-board-level-name-${index}`, (v) => { step.name = v; }),
-        checkboxField(step.autostart, 'sofort starten', (v) => { step.autostart = v; }),
+        checkboxField(step.autostart, 'Uhren sofort starten', (v) => { step.autostart = v; }),
+        hintSpan('sonst warten die Uhren auf den Baustein „Uhren in eigenem Leaderboard starten“ oder den Start-Knopf im Admin'),
       );
+      return wrap;
+    },
+  },
+  board_start_timer: {
+    label: 'Uhren in eigenem Leaderboard starten',
+    hint: 'startet beide Uhren des zuletzt angelegten Levels in einem Renn-Leaderboard',
+    make: () => ({ type: 'board_start_timer', boardId: '' }),
+    fields(step) {
+      const wrap = document.createElement('div');
+      wrap.className = 'block-fields';
+      const raceBoards = (state?.boards || []).filter((b) => b.kind === 'race');
+      if (!raceBoards.length) {
+        wrap.append(hintSpan('Noch kein Renn-Leaderboard angelegt.'));
+        return wrap;
+      }
+      if (!step.boardId || !raceBoards.some((b) => b.id === step.boardId)) step.boardId = raceBoards[0].id;
+      wrap.append(selectField(raceBoards.map((b) => [b.id, b.name]), step.boardId, (v) => { step.boardId = v; }));
       return wrap;
     },
   },

@@ -12,6 +12,7 @@ import {
   timerValue,
   winRate,
 } from '/static/common.js';
+import { createBoardView } from '/static/boardview.js';
 
 // So viele Level passen auf einen Fernseher, ohne dass es klein wird.
 const MAX_ROWS = 9;
@@ -19,6 +20,9 @@ const MAX_ROWS = 9;
 const el = {
   connBadge: document.getElementById('conn-badge'),
   fanBadge: document.getElementById('fan-badge'),
+  boardMain: document.getElementById('board-main'),
+  sosPanel: document.getElementById('sos-panel'),
+  smashPanel: document.getElementById('smash-panel'),
   sosBody: document.getElementById('sos-body'),
   sosEmpty: document.getElementById('sos-empty'),
   sosTable: document.getElementById('sos-table'),
@@ -32,6 +36,27 @@ const el = {
   smashList: document.getElementById('smash-list'),
   smashEmpty: document.getElementById('smash-empty'),
 };
+
+// Anzeige eines vom Admin ausgewaehlten eigenen Leaderboards - dieselbe
+// Zeichenlogik wie /board/<id>, nur mit "active-"-Ids gefuettert.
+const activeView = createBoardView({
+  racePanel: document.getElementById('active-race-panel'),
+  raceHeading: document.getElementById('active-race-heading'),
+  raceLead: document.getElementById('active-race-lead'),
+  raceTable: document.getElementById('active-race-table'),
+  raceBody: document.getElementById('active-race-body'),
+  raceEmpty: document.getElementById('active-race-empty'),
+  headA: document.getElementById('active-head-a'),
+  headB: document.getElementById('active-head-b'),
+  totalA: document.getElementById('active-total-a'),
+  totalB: document.getElementById('active-total-b'),
+  winsA: document.getElementById('active-wins-a'),
+  winsB: document.getElementById('active-wins-b'),
+  scorePanel: document.getElementById('active-score-panel'),
+  scoreHeading: document.getElementById('active-score-heading'),
+  scoreList: document.getElementById('active-score-list'),
+  scoreEmpty: document.getElementById('active-score-empty'),
+});
 
 let state = null;
 let liveCells = []; // { node, timer } - nur diese Zellen muessen ticken
@@ -149,8 +174,29 @@ function renderSmash() {
   });
 }
 
+/**
+ * Schaltet zwischen den drei Anzeige-Modi um (state.display.active):
+ * "all" - beide eingebauten Leaderboards nebeneinander (wie bisher),
+ * "sos"/"smash" - nur eines der beiden, einspaltig,
+ * "board:<id>" - ein eigenes Leaderboard anstelle der eingebauten, einspaltig.
+ */
+function applyActive() {
+  const active = state?.display?.active || 'all';
+  const boardMode = active.startsWith('board:');
+  const board = boardMode
+    ? (state?.boards || []).find((b) => `board:${b.id}` === active) || null
+    : null;
+
+  el.sosPanel.hidden = boardMode || active === 'smash';
+  el.smashPanel.hidden = boardMode || active === 'sos';
+  activeView.setBoard(board);
+
+  el.boardMain.classList.toggle('board-single', active !== 'all');
+}
+
 /** Laeuft dauerhaft: nur Textinhalte auffrischen, kein Neuaufbau des DOM. */
 function tick() {
+  activeView.tick();
   if (state) {
     const now = serverNow();
     for (const { node, timer } of liveCells) {
@@ -184,6 +230,7 @@ connectEvents({
     state = payload.state;
     renderSos();
     renderSmash();
+    applyActive();
   },
   onStatus: (online) => {
     el.connBadge.textContent = online ? 'live' : 'keine Verbindung';
